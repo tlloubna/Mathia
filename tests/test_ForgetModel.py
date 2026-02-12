@@ -8,24 +8,26 @@ except:
 import src.datamodel.Studentdata as SD
 import src.graphics.PlotOutills as PO
 import src.Analysis.DifficultyAnalyzer as DA
+import src.Process.ForgettingModel as FGM
+import random 
 
 
 #data Algebre05
 pathAlgebre="/home/loubna/Code Projet Mathia/Mathia/data/algebra05/data.txt"
 #data Bridge06
 pathbridge = "/home/loubna/Code Projet Mathia/Mathia/data/bridge_algebra06/data.txt"
+plotO=PO.PlotOUTILS()
 choice =2
 if choice ==1: 
     stdmodel=SD.StudentDATA(file=pathAlgebre)
 else :
     stdmodel=SD.StudentDATA(file=pathbridge)
 stdmodel.loadData(Display=True)
-PlotO=PO.PlotOUTILS()
-DifScore=DA.DifficultyANALYZER(stdmodel.data)
-Item_diff=DifScore.ScoreItemDiff(min_attempts=20)
-Kc_diff=DifScore.ScoreKcDiff(min_attempts=60)
 
-PlotO.PlotScoreDifficulty(score_diff=Item_diff)
-PlotO.PlotScoreDifficulty(score_diff=Kc_diff)
+Fmodel=FGM.ForgettingMODEL(DataStudent=stdmodel)
+Fg=Fmodel.EstimateFG()
 
-print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!done!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+plotO.plot_all_forgetting_curves(Fg)
+
+
+print("done !!!")

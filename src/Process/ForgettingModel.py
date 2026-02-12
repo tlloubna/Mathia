@@ -2,43 +2,55 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+import src.datamodel.Studentdata as STD
+import statsmodels.api as sm
 
 class ForgettingMODEL:
-    def __init__(self,data:pd.DataFrame=None):
-        self.df=data
+    def __init__(self,DataStudent: STD.StudentDATA=None):
+        self.stdata=DataStudent.data.copy()
+        self.forgettingDict:dict= {}
     
+    def PrepareSQ(self):
+        df = self.stdata.copy()
+        df["KC"] = df["KC"].astype(str).str.split("~~")
+        df = df.explode("KC")
+        df["start_time"] = pd.to_datetime(df["start_time"])
+        df = df.sort_values(["user_id", "KC", "start_time"]) #on regroupe par user_id, puis par competence puis on trie avec le temps 
+        #Pour chaque élève, chaque compétence , le temps écoulé depuis la dernire fois qu'il fait 
+        df["delta_t"] = df.groupby(["user_id", "KC"])["start_time"].diff().dt.total_seconds()
+        df = df.dropna(subset=["delta_t"])
 
-
-    def StrongMemory(self):
-        self.df = self.data.copy()
-        self.df['start_time'] = pd.to_datetime(self.df['start_time'])
-        success_rate = self.df.groupby(['user_id', 'item_id'])['correct_first_attempt'].mean()
-        num_practices = self.df.groupby(['user_id', 'item_id']).size()
-        last_review = self.df.groupby(['user_id', 'item_id'])['start_time'].max()
-        now = pd.Timestamp.now()
-        time_since_last = (now - last_review).dt.total_seconds() / 3600  # heures
-        S0 = 24
-        w1 = 48
-        w2 = 4
-        w3 = 0.2
-        memory_strength = (
-            S0
-            + w1 * success_rate
-            + w2 * num_practices
-            - w3 * time_since_last
-        )
-        memory_strength = memory_strength.clip(lower=1, upper=240)
-
-        return memory_strength
-
-        
-
-    def ForgetModel1(self,t:float=4,S:float=52):
-        return np.exp(-t/S)
-    def ForgetModel2(self,t:float=4,k:float=10):
-        return 100/(1+k*t)
+        self.df_seq = df
+        return df
     
+    def EstimateFG(self):
+        """
+        ACT_R
+        P(correct) = sigmoid(a - b * delta_t)
+        """
+        df = self.PrepareSQ()
+        count=0
+        for kc in df["KC"].unique():
+            print("Step",count,"/",len(df["KC"].unique()))
+            count+=1
+            sub = df[df["KC"] == kc]
+
+            if len(sub) < 20:
+                continue  
+
+            X = sm.add_constant(sub["delta_t"]) # X= [1 delta1, 1 delta2 ......]
+            y = sub["correct_first_attempt"]
+
+            try:
+                #on estime le modèle P(correct ) =sigmoid (a + beta*delta_t)
+                model = sm.Logit(y, X).fit(disp=False) 
+                b = -model.params["delta_t"]  # la vitesse d'oubli 
+                a=model.params["const"]
+                self.forgettingDict[kc] = (a,b) #niveau initial de maîtrise
+            except:
+                continue
+
+        return self.forgettingDict
 
 
 
-        

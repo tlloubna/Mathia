@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt 
 import seaborn as sns
 import numpy as np 
+import matplotlib.pyplot as plt
 class PlotOUTILS : 
     def __init__(self):
         pass
@@ -20,13 +21,8 @@ class PlotOUTILS :
         sns.heatmap(score_diff[['difficulty_score']], cmap="Reds", annot=False)
         plt.title("Heatmap des difficultés des KC")
         plt.show()
-
-
     
-
-
-    
-    def plot_all_forgetting_curves(self, forgettingDict, ):
+    def plot_all_forgetting_curves(self, forgettingDict ):
         plt.figure(figsize=(10, 6))
 
         t = np.linspace(0, 20000, 200)
@@ -39,6 +35,33 @@ class PlotOUTILS :
         plt.ylabel("Probabilité de réussite")
         plt.title("Courbes d’oubli pour toutes les compétences")
         plt.grid()
+        plt.show()
+
+    def plotAllProbaIRT(self, irt_model):
+        
+        plt.figure(figsize=(10, 6))
+
+        for kc in irt_model.kc_categories:
+            x, y = irt_model.item_curve(kc)
+            plt.plot(x, y, alpha=0.4)
+
+        plt.xlabel("Compétence (ability)")
+        plt.ylabel("Probabilité de réussite")
+        plt.title("Courbes IRT pour toutes les compétences")
+        plt.grid(True)
+        plt.show()
+
+    def plotpresence( self,presence,vars):
+        kcs = list(presence.keys())
+        counts = list(presence.values())
+
+        plt.figure(figsize=(14, 6))
+        plt.bar(kcs, counts, color="mediumseagreen", edgecolor="black")
+        plt.xticks(rotation=90)
+        plt.xlabel(f"{vars[0]}")
+        plt.ylabel(f"{vars[1]}")
+        plt.grid(axis="y", alpha=0.4)
+        plt.tight_layout()
         plt.show()
 
     

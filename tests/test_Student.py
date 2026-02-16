@@ -7,7 +7,7 @@ except:
 
 import src.datamodel.Studentdata as SD
 import src.graphics.PlotOutills as PO
-
+import src.Process.ForgettingModel as FGM
 
 #data Algebre05
 pathAlgebre="/home/loubna/Code Projet Mathia/Mathia/data/algebra05/data.txt"
@@ -22,9 +22,29 @@ else :
 PlotO=PO.PlotOUTILS()
 
 stdmodel.loadData(Display=True)
-stdmodel.build_Q_matrix()
-PlotO.plot_Q_matrix(Q=stdmodel.Q,KComp=stdmodel.KComp,max_items=5000)
+
+#stdmodel.CleanData(Nbofseenitem=30,NbofseenKc=100)
+
+dicSI, dicKI = stdmodel.dicSIandIK()
+
+Fmodel=FGM.ForgettingMODEL(DataStudent=stdmodel)
+Fg=Fmodel.EstimateFG()
+
+PlotO.plot_all_forgetting_curves(Fg)
+#Plot
+kc_presence = {}
+for item, kcs in dicKI.items():
+    for kc in kcs:
+        kc_presence[kc] = kc_presence.get(kc, 0) + 1
 
 
-print("done!!!! ")
+item_presence = {}
+for std, items in dicSI.items():
+    for item in items:
+        item_presence[item] = item_presence.get(item, 0) + 1 
 
+
+PlotO.plotpresence(kc_presence,vars=["kc","nb of item"])
+PlotO.plotpresence(item_presence,vars=["item","nb of std"])
+
+print("Done!!!!")

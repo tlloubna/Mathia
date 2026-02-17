@@ -21,9 +21,9 @@ else :
     stdmodel=SD.StudentDATA(file=pathbridge)
 PlotO=PO.PlotOUTILS()
 
-stdmodel.loadData(Display=True)
+stdmodel.loadData(Display=True,min_intercation=30)
 
-#stdmodel.CleanData(Nbofseenitem=30,NbofseenKc=100)
+stdmodel.CleanData(Nbofseenitem=30,NbofseenKc=100)
 
 dicSI, dicKI = stdmodel.dicSIandIK()
 

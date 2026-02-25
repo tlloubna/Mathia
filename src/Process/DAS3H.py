@@ -28,24 +28,7 @@ class DAS3HModel:
     # FIT
     # ------------------------------------------------------------------
     def fit(self, X, user_ids: list, item_ids: list, kc_list: list, n_tw: int = 5):
-        """
-        Parametres
-        ----------
-        X        : matrice sparse CSR construite par ComputeHistoryFeaturesTWKC
-        user_ids : liste ordonnee des user_id (dans l'ordre du OneHotEncoder)
-        item_ids : liste ordonnee des item_id
-        kc_list  : liste ordonnee des noms de KC
-        n_tw     : nombre de fenetres temporelles utilisees (defaut=5)
-
-        Structure des colonnes de X (apres suppression de la col 3 'correct') :
-          [0:4]                              colonnes brutes (user_id, item_id, ts, inter_id)
-          [4 : 4+n_users]                    users one-hot  -> alpha_s (ability)
-          [4+n_u : 4+n_u+n_i]               items one-hot  -> delta_j (difficulte)
-          [4+n_u+n_i : +n_kc]               skills         -> beta_k
-          [+n_kc : +n_kc*n_tw]              wins  par KC x TW
-          [+n_kc*n_tw : +n_kc]              fails par KC
-          [+n_kc : +n_kc*n_tw]              attempts par KC x TW
-        """
+        
         # Sauvegarder les metadonnees
         self.n_users  = len(user_ids)
         self.n_items  = len(item_ids)
@@ -160,21 +143,7 @@ class DAS3HModel:
         }
     
     def predict_single(self, user_id, item_id: int, kc_list: list, history: dict) -> float:
-        """
-        Calcule P(correct) pour UNE interaction via la formule DAS3H
-        sans passer par sklearn - utile pour simuler un eleve pas a pas.
-
-        Parametres
-        ----------
-        user_id  : identifiant de l'eleve
-        item_id  : identifiant de l'item
-        kc_list  : liste des KC associees a cet item
-        history  : dict {kc_name -> {"wins": array(n_tw), "fails": float, "attempts": array(n_tw)}}
-
-        Retourne
-        --------
-        float : probabilite de reussite P(correct=1)
-        """
+        
         p = self.get_params()
 
         alpha = p["alpha_s"].get(user_id, 0.0)

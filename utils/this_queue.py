@@ -3,6 +3,7 @@ class OurQueue:
     A queue for counting efficiently the number of events within time windows.
     Complexity:
         All operators in amortized O(W) time where W is the number of windows.
+        [86400, 604800, 2592000]
 
     From JJ's KTM repository: https://github.com/jilljenn/ktm.
     """

@@ -5,7 +5,7 @@ import numpy as np
 import copy
 import re
 class StudentDATA:
-    def __init__(self, file:str="algebra05/data.txt"):
+    def __init__(self, file:str="algebra05/data.txt",seed:int=42):
         self.pathfile = file
         self.data = None
         self.users = None
@@ -13,6 +13,7 @@ class StudentDATA:
         self.KComp = None
         self.Q = None
         self.exp1 = EXD.ExploreDATA(file=self.pathfile)
+        self.seed = seed
 
     def loadData(self, Display:bool=False, min_intercation:int=20, n_students:int=50):
 
@@ -21,7 +22,8 @@ class StudentDATA:
 
         # Sélectionner un sous-ensemble d'élèves AVANT factorisation
         unique_users = self.data["user_id"].unique()
-        selected_users = np.random.choice(unique_users, size=n_students, replace=False)
+        rng = np.random.default_rng(self.seed)  # générateur NumPy avec seed
+        selected_users = rng.choice(unique_users, size=n_students, replace=False)
         self.data = self.data[self.data["user_id"].isin(selected_users)]
 
         # Construire item_id = item_name + step_name

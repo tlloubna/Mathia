@@ -24,12 +24,8 @@ class DAS3HModel:
         self.item_ids  = None   # liste ordonnee des item_id
         self.kc_list   = None   # liste ordonnee des noms de KC
 
-    # ------------------------------------------------------------------
-    # FIT
-    # ------------------------------------------------------------------
-    def fit(self, X, user_ids: list, item_ids: list, kc_list: list, n_tw: int = 5):
+    def fit(self, X, user_ids, item_ids, kc_list, n_tw=5, perc_init=0.2):
         
-        # Sauvegarder les metadonnees
         self.n_users  = len(user_ids)
         self.n_items  = len(item_ids)
         self.n_kc     = len(kc_list)
@@ -37,21 +33,28 @@ class DAS3HModel:
         self.user_ids = list(user_ids)
         self.item_ids = list(item_ids)
         self.kc_list  = list(kc_list)
-
-        # y = colonne 3 (correct)
         y = X[:, 3].toarray().flatten()
-
-        # X_features = toutes les colonnes sauf la 3
+        timestamps = X[:, 2].toarray().flatten()
+        users_col = X[:, 0].toarray().flatten()
+        
+        train_indices = []
+        test_indices = []
+        
+        for user in np.unique(users_col):
+            user_mask = np.where(users_col == user)[0]
+            user_sorted = user_mask[np.argsort(timestamps[user_mask])]
+            split = max(1, round(perc_init * len(user_sorted)))
+            train_indices.extend(user_sorted[:split].tolist())
+            test_indices.extend(user_sorted[split:].tolist())
+        
         cols = list(range(X.shape[1]))
         cols.remove(3)
         X_features = X[:, cols]
-
-        # Train/test split
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_features, y, test_size=0.2, random_state=42
-        )
-
-        # Pipeline
+        
+        X_train = X_features[train_indices]
+        X_test  = X_features[test_indices]
+        y_train = y[train_indices]
+        y_test  = y[test_indices]
         pipe = Pipeline([
             ("scaler", MaxAbsScaler()),
             ("lr", LogisticRegression(solver="saga", max_iter=500, C=self.C))
@@ -64,7 +67,6 @@ class DAS3HModel:
 
         return {
             "AUC":    roc_auc_score(y_test, y_pred),
-            "ACC":    accuracy_score(y_test, np.round(y_pred)),
             "NLL":    log_loss(y_test, y_pred),
             "RMSE":   np.sqrt(mean_squared_error(y_test, y_pred)),
             "y_test": y_test,
@@ -72,76 +74,205 @@ class DAS3HModel:
             "FPR":    roc_curve(y_test, y_pred)[0],
             "TPR":    roc_curve(y_test, y_pred)[1],
         }
+    
 
-    def get_params(self) -> dict:
+    def get_params(self):
+    
+        lr   = self.model.named_steps["lr"]
+        coef = lr.coef_[0]
         
-        if self.model is None:
-            raise RuntimeError("Le modele n'a pas encore ete entraine (appelle fit() d'abord).")
+        nu  = self.n_users
+        ni  = self.n_items
+        nk  = self.n_kc    
+        ntw = self.n_tw
+        
+        # Structure fixe et connue
+        offset = 4  # colonnes df avant OHE
+        
+        i_u = (offset,           offset + nu)
+        i_i = (i_u[1],           i_u[1] + ni)
+        i_k = (i_i[1],           i_i[1] + nk)
+        i_w = (i_k[1],           i_k[1] + nk * ntw)
+        i_f = (i_w[1],           i_w[1] + nk)
+        i_a = (i_f[1],           i_f[1] + nk * ntw)
+        
+        
+        assert i_a[1] == len(coef), (
+            f"Structure incohérente : attendu {i_a[1]} coefs, "
+            f"obtenu {len(coef)}. "
+            f"Vérifie n_kc={nk}, n_tw={ntw}, n_users={nu}, n_items={ni}"
+        )
+        
+        
+        return {
+            "intercept"     : float(lr.intercept_[0]),
+            "alpha_s"       : dict(zip(self.user_ids, coef[i_u[0]:i_u[1]])),
+            "delta_j"       : dict(zip(self.item_ids, -coef[i_i[0]:i_i[1]])),
+            "beta_k"        : dict(zip(self.kc_list,  coef[i_k[0]:i_k[1]])),
+            "theta_wins"    : {kc: coef[i_w[0]:i_w[1]].reshape(nk, ntw)[i]
+                            for i, kc in enumerate(self.kc_list)},
+            "theta_fails"   : dict(zip(self.kc_list,  coef[i_f[0]:i_f[1]])),
+            "theta_attempts": {kc: coef[i_a[0]:i_a[1]].reshape(nk, ntw)[i]
+                            for i, kc in enumerate(self.kc_list)},
+                            }
+    
+    def get_paramAlphask(self):
+        lr   = self.model.named_steps["lr"]
+        coef = lr.coef_[0]
+        nu  = self.n_users
+        ni  = self.n_items
+        nk  = self.n_kc
+        ntw = self.n_tw
+
+        offset = 4  # colonnes df avant OHE
+        i_usk = (offset,          offset + nu * nk)  # alpha_{s,k}
+        i_i   = (i_usk[1],        i_usk[1] + ni)
+        i_k   = (i_i[1],          i_i[1] + nk)
+        i_w   = (i_k[1],          i_k[1] + nk * ntw)
+        i_f   = (i_w[1],          i_w[1] + nk)
+        i_a   = (i_f[1],          i_f[1] + nk * ntw)
+
+        assert i_a[1] == len(coef), (
+            f"Structure incohérente : attendu {i_a[1]} coefs, "
+            f"obtenu {len(coef)}. "
+            f"Vérifie n_kc={nk}, n_tw={ntw}, n_users={nu}, n_items={ni}"
+        )
+
+        # Construire alpha_sk — dict[(user_id, kc)] = coef
+        alpha_sk_coefs = coef[i_usk[0]:i_usk[1]].reshape(nu, nk)
+        alpha_sk = {}
+        for i, user_id in enumerate(self.user_ids):
+            for j, kc in enumerate(self.kc_list):
+                alpha_sk[(user_id, kc)] = float(alpha_sk_coefs[i, j])
+
+        return {
+            "intercept"     : float(lr.intercept_[0]),
+            "alpha_sk"      : alpha_sk,   
+            "delta_j"       : dict(zip(self.item_ids, -coef[i_i[0]:i_i[1]])),
+            "beta_k"        : dict(zip(self.kc_list,   coef[i_k[0]:i_k[1]])),
+            "theta_wins"    : {kc: coef[i_w[0]:i_w[1]].reshape(nk, ntw)[i]
+                            for i, kc in enumerate(self.kc_list)},
+            "theta_fails"   : dict(zip(self.kc_list,   coef[i_f[0]:i_f[1]])),
+            "theta_attempts": {kc: coef[i_a[0]:i_a[1]].reshape(nk, ntw)[i]
+                            for i, kc in enumerate(self.kc_list)},
+        }
+
+    def get_paramsRatio(self):
+
+        lr   = self.model.named_steps["lr"]
+        coef = lr.coef_[0]
+        
+        nu  = self.n_users
+        ni  = self.n_items
+        nk  = self.n_kc    
+        ntw = self.n_tw
+        
+        offset = 4 
+        
+        i_u = (offset,   offset + nu)
+        i_i = (i_u[1],   i_u[1] + ni)
+        i_k = (i_i[1],   i_i[1] + nk)
+        i_r = (i_k[1],   i_k[1] + nk * ntw)   
+        i_f = (i_r[1],   i_r[1] + nk)          
+
+        assert i_f[1] == len(coef), (
+            f"Structure incohérente : attendu {i_f[1]} coefs, "
+            f"obtenu {len(coef)}. "
+            f"Vérifie n_kc={nk}, n_tw={ntw}, n_users={nu}, n_items={ni}"
+        )
+        
+        return {
+            "intercept"    : float(lr.intercept_[0]),
+            "alpha_s"      : dict(zip(self.user_ids, coef[i_u[0]:i_u[1]])),
+            "delta_j"      : dict(zip(self.item_ids, -coef[i_i[0]:i_i[1]])),
+            "beta_k"       : dict(zip(self.kc_list,  coef[i_k[0]:i_k[1]])),
+            "theta_ratio"  : {kc: coef[i_r[0]:i_r[1]].reshape(nk, ntw)[i]   
+                            for i, kc in enumerate(self.kc_list)},
+            "theta_fails"  : dict(zip(self.kc_list,  coef[i_f[0]:i_f[1]])),
+        }
+
+    def get_params_alphasbestk(self,nk_top,top_kcs):
 
         lr   = self.model.named_steps["lr"]
         coef = lr.coef_[0]
 
-        nu  = self.n_users
-        ni  = self.n_items
-        ntw = self.n_tw
-        offset = 4   
-        reste_apres_users_items = len(coef) - offset - nu - ni
-        nk_reel = reste_apres_users_items // (2 + 2 * ntw)
+        nu     = self.n_users
+        ni     = self.n_items
+        nk     = self.n_kc
+        ntw    = self.n_tw
+
+        offset = 4
+
+        # users_kc — seulement n_kc_top KCs
+        i_usk = (offset,       offset + nu * nk_top)
+        i_i   = (i_usk[1],     i_usk[1] + ni)
+        i_k   = (i_i[1],       i_i[1] + nk)
+        i_w   = (i_k[1],       i_k[1] + nk * ntw)
+        i_f   = (i_w[1],       i_w[1] + nk)
+        i_a   = (i_f[1],       i_f[1] + nk * ntw)
+
+        assert i_a[1] == len(coef), (
+            f"Structure incohérente : attendu {i_a[1]}, "
+            f"obtenu {len(coef)}"
+        )
 
         
-        attendu = nk_reel * (2 + 2 * ntw)
-        if attendu != reste_apres_users_items:
-            raise ValueError(
-                f"Impossible de déduire nk_reel : reste={reste_apres_users_items}, "
-                f"nk_reel={nk_reel}, attendu={attendu}. "
-                f"Vérifiez n_tw={ntw} et la structure de sparse_df."
-            )
-
-        if nk_reel != self.n_kc:
-            print(f"[WARNING] n_kc déclaré={self.n_kc} mais n_kc dans coef_={nk_reel} "
-                  f"({self.n_kc - nk_reel} KC absents du train set → ignorés)")
-
-        #
-        i_u_start = offset
-        i_u_end   = i_u_start + nu
-
-        i_i_start = i_u_end
-        i_i_end   = i_i_start + ni
-
-        i_k_start = i_i_end
-        i_k_end   = i_k_start + nk_reel
-
-        i_w_start = i_k_end
-        i_w_end   = i_w_start + nk_reel * ntw
-
-        i_f_start = i_w_end
-        i_f_end   = i_f_start + nk_reel
-
-        i_a_start = i_f_end
-        i_a_end   = i_a_start + nk_reel * ntw
-        alpha_s_arr        = coef[i_u_start : i_u_end]
-        delta_j_arr        = -coef[i_i_start : i_i_end]   # signe inverse = difficulte
-        beta_k_arr         = coef[i_k_start : i_k_end]
-        theta_wins_arr     = coef[i_w_start : i_w_end].reshape(nk_reel, ntw)
-        theta_fails_arr    = coef[i_f_start : i_f_end]
-        theta_attempts_arr = coef[i_a_start : i_a_end].reshape(nk_reel, ntw)
-
-        kc_reel = self.kc_list[:nk_reel]
+        alpha_sk_coefs = coef[i_usk[0]:i_usk[1]].reshape(nu, nk_top)
+        alpha_sk = {}
+        for i, user_id in enumerate(self.user_ids):
+            for j, kc in enumerate(top_kcs):  # ← top_kcs seulement
+                alpha_sk[(user_id, kc)] = float(alpha_sk_coefs[i, j])
 
         return {
             "intercept"     : float(lr.intercept_[0]),
-            "alpha_s"       : dict(zip(self.user_ids, alpha_s_arr.tolist())),
-            "delta_j"       : dict(zip(self.item_ids, delta_j_arr.tolist())),
-            "beta_k"        : dict(zip(kc_reel,       beta_k_arr.tolist())),
-            "theta_wins"    : {kc: theta_wins_arr[i]     for i, kc in enumerate(kc_reel)},
-            "theta_fails"   : dict(zip(kc_reel, theta_fails_arr.tolist())),
-            "theta_attempts": {kc: theta_attempts_arr[i] for i, kc in enumerate(kc_reel)},
-            # Infos utiles
-            "_nk_declared"  : self.n_kc,
-            "_nk_reel"      : nk_reel,
-            "_kc_missing"   : self.kc_list[nk_reel:],   # KC absents du train set
+            "alpha_sk"      : alpha_sk,
+            "delta_j"       : dict(zip(self.item_ids, -coef[i_i[0]:i_i[1]])),
+            "beta_k"        : dict(zip(self.kc_list,   coef[i_k[0]:i_k[1]])),
+            "theta_wins"    : {kc: coef[i_w[0]:i_w[1]].reshape(nk, ntw)[i]
+                            for i, kc in enumerate(self.kc_list)},
+            "theta_fails"   : dict(zip(self.kc_list,   coef[i_f[0]:i_f[1]])),
+            "theta_attempts": {kc: coef[i_a[0]:i_a[1]].reshape(nk, ntw)[i]
+                            for i, kc in enumerate(self.kc_list)},
         }
     
+    #Trouver les params pour la nouvelle fonction HistoryfeaturesratioAlpha
+    def get_params_AlphaRatio(self):
+        lr   = self.model.named_steps["lr"]
+        coef = lr.coef_[0]
+        nu  = self.n_users
+        ni  = self.n_items
+        nk  = self.n_kc
+        ntw = self.n_tw
+
+        offset = 4  # colonnes df avant OHE
+        i_usk = (offset,          offset + nu * nk)  # alpha_{s,k}
+        i_i   = (i_usk[1],        i_usk[1] + ni)
+        i_k   = (i_i[1],          i_i[1] + nk)
+        i_r = (i_k[1],   i_k[1] + nk * ntw)   
+        i_f = (i_r[1],   i_r[1] + nk)
+        assert i_f[1] == len(coef), (
+            f"Structure incohérente : attendu {i_f[1]} coefs, "
+            f"obtenu {len(coef)}. "
+            f"Vérifie n_kc={nk}, n_tw={ntw}, n_users={nu}, n_items={ni}"
+        )
+        alpha_sk_coefs = coef[i_usk[0]:i_usk[1]].reshape(nu, nk)
+        alpha_sk = {}
+        for i, user_id in enumerate(self.user_ids):
+            for j, kc in enumerate(self.kc_list):
+                alpha_sk[(user_id, kc)] = float(alpha_sk_coefs[i, j])
+        
+
+
+        return {
+            "intercept"     : float(lr.intercept_[0]),
+            "alpha_sk"      : alpha_sk,   
+            "delta_j"       : dict(zip(self.item_ids, -coef[i_i[0]:i_i[1]])),
+            "beta_k"        : dict(zip(self.kc_list,   coef[i_k[0]:i_k[1]])),
+            "theta_ratio"  : {kc: coef[i_r[0]:i_r[1]].reshape(nk, ntw)[i]   
+                            for i, kc in enumerate(self.kc_list)},
+            "theta_fails"   : dict(zip(self.kc_list,   coef[i_f[0]:i_f[1]])),
+            
+        }
     def predict_single(self, user_id, item_id: int, kc_list: list, history: dict) -> float:
         
         p = self.get_params()
@@ -159,9 +290,51 @@ class DAS3HModel:
         logit = alpha - delta + beta + h_theta + p["intercept"]
         return float(1.0 / (1.0 + np.exp(-logit)))
 
-    # ------------------------------------------------------------------
-    # PREDICTION BATCH (sklearn)
-    # ------------------------------------------------------------------
+    def predict_signle_Alphask(self, user_id, item_id: int, kc_list: list, history: dict) -> float:
+        
+        p = self.get_paramAlphask()
+
+        alpha = sum(p["alpha_sk"].get((user_id, kc), 0.0) for kc in kc_list)
+        delta = p["delta_j"].get(item_id, 0.0)
+        beta  = sum(p["beta_k"].get(kc, 0.0) for kc in kc_list)
+
+        h_theta = 0.0
+        for kc in kc_list:
+            h_theta += np.dot(p["theta_wins"][kc],     history[kc]["wins"])
+            h_theta += np.dot(p["theta_attempts"][kc], history[kc]["attempts"])
+            h_theta += p["theta_fails"][kc]            * history[kc]["fails"]
+
+        logit = alpha - delta + beta + h_theta + p["intercept"]
+        return float(1.0 / (1.0 + np.exp(-logit)))
+    
+
+    def predict_singleRatio(self, user_id, item_id: int, kc_list: list, history: dict) -> float:
+        p = self.get_paramsRatio()
+        alpha = p["alpha_s"].get(user_id, 0.0)
+        delta = p["delta_j"].get(item_id, 0.0)
+        beta  = sum(p["beta_k"].get(kc, 0.0) for kc in kc_list)
+        h_theta = 0.0
+        for kc in kc_list:
+            h_theta += np.dot(p["theta_ratio"][kc], history[kc]["ratio"])  
+            h_theta += p["theta_fails"][kc]         * history[kc]["fails"]
+
+        logit = alpha - delta + beta + h_theta + p["intercept"]
+        return float(1.0 / (1.0 + np.exp(-logit)))
+    
+    def predict_SingleRatioAlpha(self, user_id, item_id: int, kc_list: list, history: dict) -> float:
+        p=self.get_params_AlphaRatio()
+
+        alpha = sum(p["alpha_sk"].get((user_id, kc), 0.0) for kc in kc_list)
+        delta = p["delta_j"].get(item_id, 0.0)
+        beta  = sum(p["beta_k"].get(kc, 0.0) for kc in kc_list)
+        h_theta = 0.0
+        for kc in kc_list:
+            h_theta += np.dot(p["theta_ratio"][kc], history[kc]["ratio"])  
+            h_theta += p["theta_fails"][kc]  * history[kc]["fails"]
+            
+        logit = alpha - delta + beta + h_theta + p["intercept"]
+        return float(1.0 / (1.0 + np.exp(-logit)))
+    
     def predict_proba(self, X_new) -> np.ndarray:
         """
         X_new : matrice sparse CSR (sans la colonne 'correct')

@@ -71,6 +71,9 @@ class StudentDATA:
         self.data = self.data.groupby("user_id").filter(lambda x: len(x) >= min_intercation)
         self.data=self.data[['user_id','item_id',"KC","timestamp","correct","inter_id"]]
         self.KComp=listOfKC
+        self.Q=Q_mat
+        self.users = self.data["user_id"].unique().tolist()
+        self.items = self.data["item_id"].unique().tolist()
         if Display:
             print("Shape Data", self.data.shape)
             print("N° of students :", self.data["user_id"].nunique())

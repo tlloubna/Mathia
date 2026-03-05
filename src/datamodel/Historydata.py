@@ -11,8 +11,6 @@ class HistoryDATA:
     def __init__(self,stdmodel:STD.StudentDATA=None,TimeWindow:list=[3600,86400,604800,float("inf")]):
         self.stdmodel=stdmodel
         self.TimeWindow:list=TimeWindow
-        
-
 
     def ComputeHistoryFeaturesTWKC(self, Q_mat, df):
 
@@ -34,8 +32,8 @@ class HistoryDATA:
         q = defaultdict(lambda: OurQueue())
 
         #  Boucle par élève
-        for stud_id in df["user_id"].unique():
-
+        for idx,stud_id in enumerate(df["user_id"].unique()):
+            print("Stud_id:",idx+1,"/",len(df["user_id"].unique()))
             df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
             df_stud = df_stud.sort_values("timestamp").to_numpy()
 
@@ -83,9 +81,13 @@ class HistoryDATA:
         enc_items = OneHotEncoder()
         X["users"] = enc_users.fit_transform(X["df"][:, 0].reshape(-1, 1))
         X["items"] = enc_items.fit_transform(X["df"][:, 1].reshape(-1, 1))
-        self.user_ids = enc_users.categories_[0].tolist()  # ← sauvegarde l'ordre
-        self.item_ids = enc_items.categories_[0].tolist()  # ← sauvegarde l'ordre
-
+        self.user_ids = enc_users.categories_[0].tolist()  
+        self.item_ids = enc_items.categories_[0].tolist()  
+        listOfKC = []
+        for kc_raw in df["KC"].unique():
+            for elt in kc_raw.split("~~"):
+                listOfKC.append(elt)
+        listOfKC = np.unique(listOfKC)
         # Construction finale
         sparse_df = sparse.hstack([
             sparse.csr_matrix(X["df"]),
@@ -96,5 +98,416 @@ class HistoryDATA:
             X["fails"],
             X["attempts"]
         ]).tocsr()
+       
+        return sparse_df, self.user_ids, self.item_ids, listOfKC
+    
 
-        return sparse_df
+    def ComputeHistoryFeaturesALPHASK(self, Q_mat, df):
+
+        # Construire dict_q_mat
+        dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
+        for item, kc in np.argwhere(Q_mat == 1):
+            dict_q_mat[item].add(kc)
+
+        n_kc    = Q_mat.shape[1]
+        n_users = df["user_id"].nunique()
+        n_pairs = n_users * n_kc  # nb colonnes pour alpha_{s,k}
+
+        user_ids_list = sorted(df["user_id"].unique())
+        user_to_idx   = {u: i for i, u in enumerate(user_ids_list)}
+
+        X = {
+            "users_kc": sparse.csr_matrix(np.empty((0, n_pairs))),  
+            "skills":   sparse.csr_matrix(np.empty((0, n_kc))),
+            "attempts": sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
+            "wins":     sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
+            "fails":    sparse.csr_matrix(np.empty((0, n_kc))),
+            "df":       np.empty((0, 5))
+        }
+
+        q = defaultdict(lambda: OurQueue())
+
+        # Boucle par élève
+        for idx, stud_id in enumerate(df["user_id"].unique()):
+            print(f"Stud_id: {idx+1}/{n_users} ({(idx+1)/n_users*100:.0f}%)")
+
+            df_stud = df[df["user_id"] == stud_id][
+                ["user_id", "item_id", "timestamp", "correct", "inter_id"]
+            ].sort_values("timestamp").to_numpy()
+
+            X["df"] = np.vstack((X["df"], df_stud))
+
+            user_idx   = user_to_idx[stud_id]
+            n_inter    = df_stud.shape[0]
+
+            # Skills
+            skills_temp = Q_mat[df_stud[:, 1].astype(int)]
+            X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
+
+            attempts  = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
+            wins      = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
+
+            users_kc_local = np.zeros((n_inter, n_kc))  # bloc local (n_inter × n_kc)
+                
+            for l, (item_id, t, correct) in enumerate(zip(
+                    df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
+                for kc in dict_q_mat[item_id]:
+                    #Attempts
+                    attempts[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                        1 + np.array(q[stud_id, kc].get_counters(t))
+                    )
+                    #Wins
+                    wins[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                        1 + np.array(q[stud_id, kc, "correct"].get_counters(t))
+                    )
+                    #user_kc
+                    users_kc_local[l, kc] = 1.0
+                    q[stud_id, kc].push(t)
+                    if correct:
+                        q[stud_id, kc, "correct"].push(t)
+
+            X["attempts"] = sparse.vstack([X["attempts"], sparse.csr_matrix(attempts)])
+            X["wins"]     = sparse.vstack([X["wins"],     sparse.csr_matrix(wins)])
+            users_kc_row = sparse.hstack([
+                sparse.csr_matrix((n_inter, user_idx * n_kc)),           # zéros avant
+                sparse.csr_matrix(users_kc_local),                        # bloc local
+                sparse.csr_matrix((n_inter, (n_users - user_idx - 1) * n_kc))  # zéros après
+            ])
+            X["users_kc"] = sparse.vstack([X["users_kc"], users_kc_row])
+
+            # Fails
+            fails = np.multiply(
+                np.cumsum(
+                    np.multiply(
+                        np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)),
+                        np.hstack(([0], 1 - df_stud[:, 3])).reshape(-1, 1)
+                    ), axis=0
+                )[:-1],
+                skills_temp
+            )
+            X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+        enc_items = OneHotEncoder()
+        X["items"] = enc_items.fit_transform(X["df"][:, 1].reshape(-1, 1))
+        self.item_ids = enc_items.categories_[0].tolist()
+        self.user_ids = user_ids_list
+
+        listOfKC = []
+        for kc_raw in df["KC"].unique():
+            for elt in kc_raw.split("~~"):
+                listOfKC.append(elt)
+        listOfKC = np.unique(listOfKC)
+        sparse_df = sparse.hstack([
+            sparse.csr_matrix(X["df"]),
+            X["users_kc"],   
+            X["items"],
+            X["skills"],
+            X["wins"],
+            X["fails"],
+            X["attempts"]
+        ]).tocsr()
+
+        return sparse_df, self.user_ids, self.item_ids, listOfKC
+        
+
+    def ComputeHistoryFeaturesAlphabestInter(self, Q_mat, df, min_kc_interactions=1000):
+        """
+        min_kc_interactions : seuil minimum d'interactions par KC
+                            pour être inclus dans alpha_sk
+        """
+        # Construire dict_q_mat
+        dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
+        for item, kc in np.argwhere(Q_mat == 1):
+            dict_q_mat[item].add(kc)
+
+       
+        df_exploded = df.copy()
+        df_exploded["KC"] = df_exploded["KC"].str.split("~~")
+        df_exploded = df_exploded.explode("KC")
+        kc_counts = df_exploded["KC"].value_counts()
+
+        top_kcs_names = set(kc_counts[kc_counts >= min_kc_interactions].index)
+        self.top_kcs = sorted(top_kcs_names)  
+        print(f"KCs retenus pour alpha_sk : {len(top_kcs_names)} / "
+            f"{len(kc_counts)} (seuil={min_kc_interactions})")
+
+        listOfKC = []
+        for kc_raw in df["KC"].unique():
+            for elt in kc_raw.split("~~"):
+                listOfKC.append(elt)
+        listOfKC = np.unique(listOfKC)
+
+        kc_to_idx  = {kc: i for i, kc in enumerate(listOfKC)}
+        top_kc_idx = sorted([kc_to_idx[kc] for kc in top_kcs_names
+                            if kc in kc_to_idx])
+        top_kcs_filtered = [listOfKC[i] for i in top_kc_idx]
+
+        n_kc        = Q_mat.shape[1]
+        n_kc_top    = len(top_kc_idx) 
+        n_users     = df["user_id"].nunique()
+        n_pairs     = n_users * n_kc_top  
+
+        print(f"Paramètres alpha_sk : {n_users} × {n_kc_top} = {n_pairs}")
+        print(f"Ratio estimé        : {len(df) / n_pairs:.1f}")
+
+        user_ids_list = sorted(df["user_id"].unique())
+        user_to_idx   = {u: i for i, u in enumerate(user_ids_list)}
+        X = {
+            "users_kc": sparse.csr_matrix(np.empty((0, n_pairs))),
+            "skills":   sparse.csr_matrix(np.empty((0, n_kc))),
+            "attempts": sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
+            "wins":     sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
+            "fails":    sparse.csr_matrix(np.empty((0, n_kc))),
+            "df":       np.empty((0, 5))
+        }
+
+        q = defaultdict(lambda: OurQueue())
+
+        for idx, stud_id in enumerate(df["user_id"].unique()):
+            print(f"Stud_id: {idx+1}/{n_users}")
+
+            df_stud = df[df["user_id"] == stud_id][
+                ["user_id", "item_id", "timestamp", "correct", "inter_id"]
+            ].sort_values("timestamp").to_numpy()
+
+            X["df"] = np.vstack((X["df"], df_stud))
+            user_idx = user_to_idx[stud_id]
+            n_inter  = df_stud.shape[0]
+
+            # Skills
+            skills_temp = Q_mat[df_stud[:, 1].astype(int)]
+            X["skills"] = sparse.vstack([X["skills"],
+                                        sparse.csr_matrix(skills_temp)])
+
+            # Attempts + Wins
+            attempts = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
+            wins     = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
+
+            users_kc_local = np.zeros((n_inter, n_kc_top))
+
+            for l, (item_id, t, correct) in enumerate(zip(
+                    df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
+
+                for kc in dict_q_mat[item_id]:
+                    attempts[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                        1 + np.array(q[stud_id, kc].get_counters(t))
+                    )
+                    wins[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                        1 + np.array(q[stud_id, kc, "correct"].get_counters(t))
+                    )
+
+                    if kc in top_kc_idx:
+                        local_idx = top_kc_idx.index(kc)
+                        users_kc_local[l, local_idx] = 1.0
+
+                    q[stud_id, kc].push(t)
+                    if correct:
+                        q[stud_id, kc, "correct"].push(t)
+
+            X["attempts"] = sparse.vstack([X["attempts"],
+                                            sparse.csr_matrix(attempts)])
+            X["wins"]     = sparse.vstack([X["wins"],
+                                            sparse.csr_matrix(wins)])
+
+            users_kc_row = sparse.hstack([
+                sparse.csr_matrix((n_inter, user_idx * n_kc_top)),
+                sparse.csr_matrix(users_kc_local),
+                sparse.csr_matrix((n_inter, (n_users - user_idx - 1) * n_kc_top))
+            ])
+            X["users_kc"] = sparse.vstack([X["users_kc"], users_kc_row])
+
+            # Fails
+            fails = np.multiply(
+                np.cumsum(
+                    np.multiply(
+                        np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)),
+                        np.hstack(([0], 1 - df_stud[:, 3])).reshape(-1, 1)
+                    ), axis=0
+                )[:-1],
+                skills_temp
+            )
+            X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+
+        # One-hot items
+        enc_items = OneHotEncoder()
+        X["items"] = enc_items.fit_transform(X["df"][:, 1].reshape(-1, 1))
+        self.item_ids     = enc_items.categories_[0].tolist()
+        self.user_ids     = user_ids_list
+        self.top_kcs      = top_kcs_filtered  
+        self.top_kc_idx   = top_kc_idx
+        self.n_kc_top     = n_kc_top
+
+        sparse_df = sparse.hstack([
+            sparse.csr_matrix(X["df"]),
+            X["users_kc"],
+            X["items"],
+            X["skills"],
+            X["wins"],
+            X["fails"],
+            X["attempts"]
+        ]).tocsr()
+
+        return sparse_df, self.user_ids, self.item_ids, listOfKC
+                
+
+    def ComputeHistoryFeaturesRatio(self, Q_mat, df):
+
+        dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
+        for item, kc in np.argwhere(Q_mat == 1):
+            dict_q_mat[item].add(kc)
+        X = {
+            "skills": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
+            "ratio": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * NB_OF_TIME_WINDOWS))),
+            "fails": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
+            "df": np.empty((0, 5))
+        }
+
+        q = defaultdict(lambda: OurQueue())
+
+        for idx, stud_id in enumerate(df["user_id"].unique()):
+            print("Stud_id:", idx+1, "/", len(df["user_id"].unique()))
+            df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
+            df_stud = df_stud.sort_values("timestamp").to_numpy()
+
+            X["df"] = np.vstack((X["df"], df_stud))
+
+            skills_temp = Q_mat[df_stud[:, 1].astype(int)]
+            X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
+
+            ratio = np.zeros((df_stud.shape[0], Q_mat.shape[1] * NB_OF_TIME_WINDOWS))
+            for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
+                for kc in dict_q_mat[item_id]:
+                    w = np.array(q[stud_id, kc, "correct"].get_counters(t))
+                    a = np.array(q[stud_id, kc].get_counters(t))
+                    
+                    ratio[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                        (1 + w) / (1 + a)
+                    )
+                    
+                    q[stud_id, kc].push(t)
+                    if correct:
+                        q[stud_id, kc, "correct"].push(t)
+
+            X["ratio"] = sparse.vstack([X["ratio"], sparse.csr_matrix(ratio)])
+
+            fails = np.multiply(
+                np.cumsum(
+                    np.multiply(
+                        np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)),
+                        np.hstack(([0], 1 - df_stud[:, 3])).reshape(-1, 1)
+                    ), axis=0
+                )[:-1],
+                skills_temp
+            )
+            X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+
+        enc_users = OneHotEncoder()
+        enc_items = OneHotEncoder()
+        X["users"] = enc_users.fit_transform(X["df"][:, 0].reshape(-1, 1))
+        X["items"] = enc_items.fit_transform(X["df"][:, 1].reshape(-1, 1))
+        self.user_ids = enc_users.categories_[0].tolist()
+        self.item_ids = enc_items.categories_[0].tolist()
+
+        listOfKC = []
+        for kc_raw in df["KC"].unique():
+            for elt in kc_raw.split("~~"):
+                listOfKC.append(elt)
+        listOfKC = np.unique(listOfKC)
+        sparse_df = sparse.hstack([
+            sparse.csr_matrix(X["df"]),
+            X["users"],
+            X["items"],
+            X["skills"],
+            X["ratio"],  
+            X["fails"],
+        ]).tocsr()
+
+        return sparse_df, self.user_ids, self.item_ids, listOfKC
+    
+
+    def ComputeHistoryfeaturesRatioAlpha(self,Q_mat,df):
+        dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
+        for item, kc in np.argwhere(Q_mat == 1):
+            dict_q_mat[item].add(kc)
+
+        n_kc    = Q_mat.shape[1]
+        n_users = df["user_id"].nunique()
+        n_pairs = n_users * n_kc  # nb colonnes pour alpha_{s,k}
+
+        user_ids_list = sorted(df["user_id"].unique())
+        user_to_idx   = {u: i for i, u in enumerate(user_ids_list)}
+        X = {
+            "users_kc": sparse.csr_matrix(np.empty((0, n_pairs))), 
+            "skills": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
+            "ratio": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * NB_OF_TIME_WINDOWS))),
+            "fails": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
+            "df": np.empty((0, 5))
+        }
+
+        q = defaultdict(lambda: OurQueue())
+
+        for idx, stud_id in enumerate(df["user_id"].unique()):
+            print("Stud_id:", idx+1, "/", len(df["user_id"].unique()))
+            df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
+            df_stud = df_stud.sort_values("timestamp").to_numpy()
+
+            X["df"] = np.vstack((X["df"], df_stud))
+            user_idx   = user_to_idx[stud_id]
+            n_inter    = df_stud.shape[0]
+            skills_temp = Q_mat[df_stud[:, 1].astype(int)]
+            X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
+
+            ratio = np.zeros((df_stud.shape[0], Q_mat.shape[1] * NB_OF_TIME_WINDOWS))
+            users_kc_local = np.zeros((n_inter, n_kc))
+            for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
+                for kc in dict_q_mat[item_id]:
+                    w = np.array(q[stud_id, kc, "correct"].get_counters(t))
+                    a = np.array(q[stud_id, kc].get_counters(t))
+                    
+                    ratio[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                        (1 + w) / (1 + a)
+                    )
+                    #user_kc
+                    users_kc_local[l, kc] = 1.0
+                    q[stud_id, kc].push(t)
+                    if correct:
+                        q[stud_id, kc, "correct"].push(t)
+
+            X["ratio"] = sparse.vstack([X["ratio"], sparse.csr_matrix(ratio)])
+            users_kc_row = sparse.hstack([
+                sparse.csr_matrix((n_inter, user_idx * n_kc)),           # zéros avant
+                sparse.csr_matrix(users_kc_local),                        # bloc local
+                sparse.csr_matrix((n_inter, (n_users - user_idx - 1) * n_kc))  # zéros après
+            ])
+            X["users_kc"] = sparse.vstack([X["users_kc"], users_kc_row])
+
+            fails = np.multiply(
+                np.cumsum(
+                    np.multiply(
+                        np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)),
+                        np.hstack(([0], 1 - df_stud[:, 3])).reshape(-1, 1)
+                    ), axis=0
+                )[:-1],
+                skills_temp
+            )
+            X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+
+        
+        enc_items = OneHotEncoder()
+        X["items"] = enc_items.fit_transform(X["df"][:, 1].reshape(-1, 1))
+        self.item_ids = enc_items.categories_[0].tolist()
+        self.user_ids = user_ids_list
+        listOfKC = []
+        for kc_raw in df["KC"].unique():
+            for elt in kc_raw.split("~~"):
+                listOfKC.append(elt)
+        listOfKC = np.unique(listOfKC)
+        sparse_df = sparse.hstack([
+            sparse.csr_matrix(X["df"]),
+            X["users_kc"],  
+            X["items"],
+            X["skills"],
+            X["ratio"],  
+            X["fails"],
+        ]).tocsr()
+
+        return sparse_df, self.user_ids, self.item_ids, listOfKC

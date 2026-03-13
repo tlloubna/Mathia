@@ -157,6 +157,37 @@ def plot_calibration(y_true, y_pred_original, y_pred_alphask):
     plt.tight_layout()
     plt.show()
 
+
+def plot_calibration1(y_true, y_pred_original):
+    #plot la courbe de calibration du modèle original
+    fig, ax = plt.subplots(figsize=(7, 7))
+    prob_true, prob_pred = calibration_curve(
+        y_true, y_pred_original, n_bins=10
+    )   
+    ax.plot(prob_pred, prob_true,
+            marker='o', color="steelblue",
+            linewidth=2, label="modèle original")
+    ax.plot([0, 1], [0, 1],
+            linestyle="--", color="gray",
+            label="calibration parfaite")
+    ax.fill_between(prob_pred,
+                    prob_true - 0.05,
+                    prob_true + 0.05,
+                    alpha=0.1, color="green",
+                    label="marge ±5%")
+    ax.set_xlabel("P prédite")
+    ax.set_ylabel("Taux réel de réussite")
+    ax.legend()
+    ax.grid(True, alpha=0.3)    
+
+
+    plt.suptitle("Calibration — P prédite vs taux réel\n"
+                 "Courbe proche diagonale = bien calibré \n"
+                 "Dataset : algebra05",
+                 fontsize=13)
+    plt.tight_layout()
+    plt.show()
+
 def plot_real_theta_vs_future(df, params_original, params_ratio):
     
     Window  = ["1h", "1j", "1sem", "1mois", "∞"]
@@ -443,8 +474,8 @@ if __name__ == "__main__":
     elif timetoexeucte==2:
         df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
         q_matrix = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()
-        X=sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Ratio{N_STUDENTS}std.npz"))
-        metadata = np.load(os.path.join(DATA_FOLDER, f"history_metadata_Ratio{N_STUDENTS}std.npz"), allow_pickle=True)
+        X=sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Ratio_Alpha{N_STUDENTS}std.npz"))
+        metadata = np.load(os.path.join(DATA_FOLDER, f"history_metadata_Ratio_Alpha{N_STUDENTS}std.npz"), allow_pickle=True)
         user_ids = metadata["user_ids"]
         item_ids = metadata["item_ids"]
         kc_list = metadata["kc_list"]
@@ -454,13 +485,22 @@ if __name__ == "__main__":
         end=time.time()
         print(f"Time to train model: {end - start:.2f} seconds")
     elif timetoexeucte==3:
-        df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))        
-        model_path_Aalphask = os.path.join(DATA_FOLDER, f"das3h_model_Ratio_C0.1_{N_STUDENTS}std.pkl")
+        df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))  
+        for c in [0.01, 0.1, 1]:
+            model_path = os.path.join(DATA_FOLDER, f"das3h_model_Ratio_C{c}_{N_STUDENTS}std.pkl")
+            loaded_original = joblib.load(model_path)
+            model_original = loaded_original["model"]
+            results_original = loaded_original["results"]
+            print(f"Results for C={c} : AUC={results_original['AUC']:.4f}, NLL={results_original['NLL']:.4f}, RMSE={results_original['RMSE']:.4f}")
+
+        model_path_alphask = os.path.join(DATA_FOLDER, f"das3h_model_alphask_C0.1_{N_STUDENTS}std.pkl")
         model_path_original = os.path.join(DATA_FOLDER, f"das3h_model_C1.0_{N_STUDENTS}std.pkl")
-        X_alphask = sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Ratio{N_STUDENTS}std.npz"))
+        #plot calibration 
+
+        #X_alpharatio = sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Ratio_Alpha{N_STUDENTS}std.npz"))
         X_original = sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_{N_STUDENTS}std.npz"))
-        loaded = joblib.load(model_path_Aalphask)
-        model = loaded["model"]
+        #loaded = joblib.load(model_path_ratioalpha)
+        #model = loaded["model"]
         loaded_original = joblib.load(model_path_original)
         model_original = loaded_original["model"]
         #params_original = test_model_parameters(model_original)
@@ -468,15 +508,15 @@ if __name__ == "__main__":
         cols_original.remove(3)
         X_original_no_col3 = X_original[:, cols_original]
         p_original=model_original.model.predict_proba(X_original_no_col3)[:, 1]
-        #remove colonne 3 de X_alphask pour faire la prediction
-        cols_alphask = list(range(X_alphask.shape[1]))
-        cols_alphask.remove(3)
-        X_alphask_no_col3 = X_alphask[:, cols_alphask]
-        p_alphask=model.model.predict_proba(X_alphask_no_col3)[:, 1]
-        y_true = X_alphask[:, 3].toarray().flatten()    
-        plot_real_theta_vs_future(df,model_original.get_params(),model.get_paramsRatio())
-        #plot_log_vs_future_sucess(df,model_original.get_params(),model.get_paramsRatio())
-        #plot_calibration(y_true, p_original, p_alphask)
+        #remove colonne 3 de X_alpharatio pour faire la prediction
+        #cols_alpharatio = list(range(X_alpharatio.shape[1]))
+        #cols_alpharatio.remove(3)
+        #"X_alpharatio_no_col3 = X_alpharatio[:, cols_alpharatio]
+        #p_alpharatio=model.model.predict_proba(X_alpharatio_no_col3)[:, 1]
+        #y_true = X_alpharatio[:, 3].toarray().flatten() 
+        y_true = X_original[:, 3].toarray().flatten() 
+        plot_calibration1(y_true, p_original)
         
+    
 
     print("!!!!!!!!!!!!Done!!!!!!!!!!!!!!!!!!!")

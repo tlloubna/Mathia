@@ -736,24 +736,29 @@ if __name__ == "__main__":
         #PlotPrVar(df,NbInterTime=50,chose=2)
         #PlotPrVarByKC(df, NbInterTime=50,chose=1)
         #PlotPrVarByKC(df, NbInterTime=50,chose=2)
-        model_path = os.path.join(DATA_FOLDER, f"das3h_model_C{1.0}_{N_STUDENTS}std.pkl")
-        loaded = joblib.load(model_path)
-        model = loaded["model"]
+        for c in [0.01, 0.1, 1.0]:
+            model_path = os.path.join(DATA_FOLDER, f"das3h_model_C{c}_{N_STUDENTS}std.pkl")
+            loaded = joblib.load(model_path)
+            model = loaded["model"]
+            #recuperer AUC,NLL et RMSE du modèle dans results
+            results = loaded["results"]
+            print(f"Model with C={c}:")
+            print(f"Model performance: AUC={results['AUC']:.4f}, NLL={results['NLL']:.4f}, RMSE={results['RMSE']:.4f}")
         #chose the most practiced item
         #On va choisir des items et user aleatoires (5 et on regarde)
-        start=time.time()
+        """start=time.time()
         df_probaAll=ComputeProbaOverTime(df, model, UserOrItem=None,choseItemOrUser=3,max_per_user=1000)
         end=time.time()
         print(f"Time to compute probabilities over time: {(end - start)/60:.2f} minutes")
-        PlotMAsterOverTimeByItem(df_probaAll, UserORItem=None,NbInterTime=10,chose=3)
+        PlotMAsterOverTimeByItem(df_probaAll, UserORItem=None,NbInterTime=10,chose=3)"""
         #user_id = df["user_id"].value_counts().idxmax()
         #item_id = df["item_id"].value_counts().idxmax()
         #df_proba = ComputeProbaOverTime(df, model, UserOrItem=item_id,choseItemOrUser=1)
         #PlotMAsterOverTimeByItem(df_proba, UserORItem=item_id,NbInterTime=10,chose=1)
-        results = loaded["results"]
+        """results = loaded["results"]
         params = test_model_parameters(model)
         #plot_theta_vs_log_counts(df, params=params)
-        plot_theta_vs_log_countsKC(df, params=params)
+        plot_theta_vs_log_countsKC(df, params=params)"""
     
    
     print("!!!!!!!!!!!!!! Done ^^  !!!!!!!!!!!!!")

@@ -6,7 +6,7 @@ import copy
 import re
 class StudentDATA:
     def __init__(self, file:str="algebra05/data.txt",seed:int=42):
-        self.pathfile = file
+        self.pathfile = file #if it csv 
         self.data = None
         self.users = None
         self.items = None
@@ -165,3 +165,68 @@ class StudentDATA:
         return Q
     
     
+
+class Mathiadata(StudentDATA):
+    def __init__(self, file:str="data/Mathiadata/data.csv",seed:int=42):
+        super().__init__(file,seed)
+    def loadData(self, Display:bool=False, min_intercation:int=20, n_students:int=50):
+        df = pd.read_csv(self.pathfile)
+
+        df = df.rename(columns={
+            "student_id": "user_id",
+            "kc_ids":     "KC",
+        })
+
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+        df = df.dropna(subset=["timestamp"])
+        df["timestamp"] = df["timestamp"].astype(np.int64) // 10**9 #on convertit en ns puis en sec 
+
+        df = df[df["KC"].notna()]
+        df["KC"] = df["KC"].astype(str)
+
+        unique_users = df["user_id"].unique()
+        rng = np.random.default_rng(self.seed)
+        if n_students < len(unique_users):
+            selected = rng.choice(unique_users, size=n_students, replace=False)
+            df = df[df["user_id"].isin(selected)]
+
+        df["inter_id"] = df.index
+        df = df.groupby("user_id").filter(lambda x: len(x) >= min_intercation)
+        df = df.reset_index(drop=True)
+        df["user_id"], _ = pd.factorize(df["user_id"])  
+        df["item_id"], _ = pd.factorize(df["item_id"]) 
+        df["inter_id"] = df.index
+
+        df = df[["user_id", "item_id", "KC", "timestamp", "correct", "inter_id"]]
+
+        all_kcs = []
+        for kc_raw in df["KC"].unique():
+            for kc in str(kc_raw).split("~~"):
+                all_kcs.append(kc)
+        all_kcs = np.unique(all_kcs)
+        kc_to_idx = {kc: i for i, kc in enumerate(all_kcs)}
+
+        
+        n_kc    = len(all_kcs)
+        Q_mat = np.zeros((df["item_id"].nunique(), len(all_kcs)), dtype=int)
+        item_skill = np.array(df[["item_id", "KC"]].drop_duplicates())  
+
+        for i in range(len(item_skill)):
+            for kc in str(item_skill[i, 1]).split("~~"):
+                if kc in kc_to_idx:
+                    Q_mat[int(item_skill[i, 0]), kc_to_idx[kc]] = 1
+
+        self.data   = df
+        self.Q      = Q_mat
+        self.KComp  = all_kcs.tolist()
+        self.users  = df["user_id"].unique().tolist()
+        self.items  = df["item_id"].unique().tolist()
+
+        if Display:
+            print(f"Shape Data     : {df.shape}")
+            print(f"N° of students : {df['user_id'].nunique()}")
+            print(f"N° of items    : {df['item_id'].nunique()}")
+            print(f"N° of KC       : {n_kc}")
+            print(df.head())
+
+        return df, Q_mat

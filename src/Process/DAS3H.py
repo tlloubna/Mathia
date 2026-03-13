@@ -39,7 +39,9 @@ class DAS3HModel:
         
         train_indices = []
         test_indices = []
-        
+        #On split par utilisateur pour éviter les fuites temporelles entre train et test
+        #Exemple : si un étudiant a 10 interactions, on prend les 2 premières pour le train et les 8 suivantes pour le test (si perc_init=0.2)
+        #Contre En split aléatoire, on pourrait avoir les 10 interactions de cet étudiant dans le train et aucune dans le test, ce qui fausserait l'évaluation
         for user in np.unique(users_col):
             user_mask = np.where(users_col == user)[0]
             user_sorted = user_mask[np.argsort(timestamps[user_mask])]

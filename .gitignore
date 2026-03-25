@@ -2,6 +2,7 @@
 __pycache__
 data/
 docs/
-tests/test_mongo.py
-tests/test_das3hMathia.py
+tests/test_mongodb.py
+tests/test_ManageMathia.py
 tests/test_das3hManageMathia.py
+tests/test_ExploreMathia.py

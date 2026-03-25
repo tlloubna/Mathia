@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from scipy.sparse import csr_matrix
 
 
+from collections import defaultdict
 class DAS3HModel:
 
     def __init__(self, C=1.0):
@@ -77,6 +78,34 @@ class DAS3HModel:
             "TPR":    roc_curve(y_test, y_pred)[1],
         }
     
+    def fit_with_split(self, X_train, X_test):
+        y_train = X_train[:, 3].toarray().flatten()
+        y_test  = X_test[:, 3].toarray().flatten()
+        cols = list(range(X_train.shape[1]))
+        cols.remove(3)
+        cols_test = list(range(X_test.shape[1]))
+        cols_test.remove(3)
+        X_train = X_train[:, cols]
+        X_test  = X_test[:, cols_test]
+        pipe = Pipeline([
+            ("scaler", MaxAbsScaler()),
+            ("lr", LogisticRegression(solver="saga", max_iter=500, C=self.C))
+        ])
+
+        pipe.fit(X_train, y_train)
+        self.model = pipe
+
+        y_pred = pipe.predict_proba(X_test)[:, 1]
+
+        return {
+            "AUC":    roc_auc_score(y_test, y_pred),
+            "NLL":    log_loss(y_test, y_pred),
+            "RMSE":   np.sqrt(mean_squared_error(y_test, y_pred)),
+            "y_test": y_test,
+            "y_pred": y_pred,
+            "FPR":    roc_curve(y_test, y_pred)[0],
+            "TPR":    roc_curve(y_test, y_pred)[1],
+        }
 
     def get_params(self):
     
@@ -342,3 +371,11 @@ class DAS3HModel:
         X_new : matrice sparse CSR (sans la colonne 'correct')
         """
         return self.model.predict_proba(X_new)[:, 1]
+    def listOfItemforKc(self,kc,q_mat):
+        #Trouver les items associés à un kc donné
+        #q_mat est la matrice de q-matrix (items x kcs)
+        #on suppose que q_mat est un csr_matrix
+        item_indices = q_mat[:, self.kc_list.index(kc)].nonzero()[0]
+        return [self.item_ids[i] for i in item_indices]
+   
+        

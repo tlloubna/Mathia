@@ -20,7 +20,7 @@ from utils.this_queue import OurQueue
 from collections import defaultdict
 import time
 from sklearn.calibration import calibration_curve
-from sklearn.calibration import calibration_curve
+
 from sklearn.metrics import brier_score_loss, log_loss
 NAME_FOLDER="bridge_algebra06" #algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
@@ -241,8 +241,8 @@ def plot_real_theta_vs_future(df, params_original, params_ratio):
             results.append({
                 "theta_wins_log":     theta_wins_real,
                 "theta_attempts_log": theta_attempts_real,
-                "theta_sum": sum_wins_attempts,
-                "theta_ratio_log":    theta_ratio_real,
+                "Historique (params séparés)": sum_wins_attempts,
+                "Historique (params ratio)":    theta_ratio_real,
                 "taux_futur":          taux_futur
             })
 
@@ -250,16 +250,14 @@ def plot_real_theta_vs_future(df, params_original, params_ratio):
 
     # Corrélations
     print("=== Corrélations des VRAIS theta avec taux futur ===")
-    for feat in ["theta_wins_log", "theta_attempts_log","theta_sum", "theta_ratio_log"]:
+    for feat in ["theta_wins_log", "theta_attempts_log","Historique (params séparés)", "Historique (params ratio)"]:
         print(f"{feat} : {df_res[feat].corr(df_res['taux_futur']):.4f}")
 
     # Visualisation
     fig, axes = plt.subplots(1, 4, figsize=(18, 5))
-    features = ["theta_wins_log", "theta_attempts_log","theta_sum", "theta_ratio_log"]
-    titles = ["θ_wins log(1+wins) vs taux futur",
-          "θ_attempts log(1+attempts) vs taux futur",
-          "θ_wins log(1+wins) + θ_attempts log(1+attempts) vs futur",  
-          "θ_ratio log((1+w)/(1+a)) vs taux futur"]
+    features = ["theta_wins_log", "theta_attempts_log","Historique (params séparés)", "Historique (params ratio)"]
+    titles = ["theta_wins_log vs Taux futur", "theta_attempts_log vs Taux futur",
+              "Historique (params séparés) vs Taux futur", "Historique (params ratio) vs Taux futur"]
 
     for ax, feat, title in zip(axes, features, titles):
         df_res["bin"] = pd.cut(df_res[feat], bins=10)
@@ -270,16 +268,15 @@ def plot_real_theta_vs_future(df, params_original, params_ratio):
                        binned["mean"] - binned["std"],
                        binned["mean"] + binned["std"],
                        alpha=0.2)
-        ax.set_title(title)
-        ax.set_xlabel(f"Bins de {feat} ")
-        ax.set_ylabel("Taux réussite futur moyen")
+        ax.set_title(title,fontsize=14)
+        ax.set_xlabel(f"{feat} ", fontsize=14)
+        ax.set_ylabel("Taux réussite futur moyen", fontsize=14)
         ax.axhline(df_res["taux_futur"].mean(), color="red",
                   linestyle="--", label="moyenne globale")
         ax.legend()
         ax.grid(True)
 
-    plt.suptitle("Relation entre les VRAIS theta appris et la réussite future",
-                fontweight="bold")
+    
     plt.tight_layout()
     plt.show()
 
@@ -486,37 +483,15 @@ if __name__ == "__main__":
         print(f"Time to train model: {end - start:.2f} seconds")
     elif timetoexeucte==3:
         df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))  
-        for c in [0.01, 0.1, 1]:
-            model_path = os.path.join(DATA_FOLDER, f"das3h_model_Ratio_C{c}_{N_STUDENTS}std.pkl")
-            loaded_original = joblib.load(model_path)
-            model_original = loaded_original["model"]
-            results_original = loaded_original["results"]
-            print(f"Results for C={c} : AUC={results_original['AUC']:.4f}, NLL={results_original['NLL']:.4f}, RMSE={results_original['RMSE']:.4f}")
-
-        model_path_alphask = os.path.join(DATA_FOLDER, f"das3h_model_alphask_C0.1_{N_STUDENTS}std.pkl")
-        model_path_original = os.path.join(DATA_FOLDER, f"das3h_model_C1.0_{N_STUDENTS}std.pkl")
-        #plot calibration 
-
-        #X_alpharatio = sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Ratio_Alpha{N_STUDENTS}std.npz"))
-        X_original = sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_{N_STUDENTS}std.npz"))
-        #loaded = joblib.load(model_path_ratioalpha)
-        #model = loaded["model"]
-        loaded_original = joblib.load(model_path_original)
-        model_original = loaded_original["model"]
-        #params_original = test_model_parameters(model_original)
-        cols_original = list(range(X_original.shape[1]))
-        cols_original.remove(3)
-        X_original_no_col3 = X_original[:, cols_original]
-        p_original=model_original.model.predict_proba(X_original_no_col3)[:, 1]
-        #remove colonne 3 de X_alpharatio pour faire la prediction
-        #cols_alpharatio = list(range(X_alpharatio.shape[1]))
-        #cols_alpharatio.remove(3)
-        #"X_alpharatio_no_col3 = X_alpharatio[:, cols_alpharatio]
-        #p_alpharatio=model.model.predict_proba(X_alpharatio_no_col3)[:, 1]
-        #y_true = X_alpharatio[:, 3].toarray().flatten() 
-        y_true = X_original[:, 3].toarray().flatten() 
-        plot_calibration1(y_true, p_original)
         
+        
+        model_pathR = os.path.join(DATA_FOLDER, f"das3h_model_Ratio_C0.1_{N_STUDENTS}std.pkl")
+        model_pathO = os.path.join(DATA_FOLDER, f"das3h_model_C1.0_{N_STUDENTS}std.pkl")
+        model_Ratio, results_Ratio = joblib.load(model_pathR)["model"], joblib.load(model_pathR)["results"]
+        model_original, results_original = joblib.load(model_pathO)["model"], joblib.load(model_pathO)["results"]
+
+        plot_real_theta_vs_future(df, model_original.get_params(), model_Ratio.get_paramsRatio())
+        print("Done")
     
 
     print("!!!!!!!!!!!!Done!!!!!!!!!!!!!!!!!!!")

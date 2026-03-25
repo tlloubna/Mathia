@@ -164,7 +164,13 @@ class StudentDATA:
 
         return Q
     
-    
+    def get_student_kcs(self, data, student_id):
+        KC_student = data[data["user_id"] == student_id]["KC"]
+        kcs = []
+        for kc_raw in KC_student.unique():
+            for elt in kc_raw.split("~~"):
+                kcs.append(elt)
+        return kcs
 
 class Mathiadata(StudentDATA):
     def __init__(self, file:str="data/Mathiadata/data.csv",seed:int=42):
@@ -176,7 +182,8 @@ class Mathiadata(StudentDATA):
             "student_id": "user_id",
             "kc_ids":     "KC",
         })
-
+        #le nombre de sec écoulées depuis le 1ier janvier 1970 à 00:00:00 UTC
+        #1970 est la date de la naisance de 1970
         df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
         df = df.dropna(subset=["timestamp"])
         df["timestamp"] = df["timestamp"].astype(np.int64) // 10**9 #on convertit en ns puis en sec 
@@ -197,7 +204,7 @@ class Mathiadata(StudentDATA):
         df["item_id"], _ = pd.factorize(df["item_id"]) 
         df["inter_id"] = df.index
 
-        df = df[["user_id", "item_id", "KC", "timestamp", "correct", "inter_id"]]
+        
 
         all_kcs = []
         for kc_raw in df["KC"].unique():
@@ -216,6 +223,7 @@ class Mathiadata(StudentDATA):
                 if kc in kc_to_idx:
                     Q_mat[int(item_skill[i, 0]), kc_to_idx[kc]] = 1
 
+        df = df[["user_id", "item_id", "KC","kc_names", "timestamp", "correct", "inter_id"]]
         self.data   = df
         self.Q      = Q_mat
         self.KComp  = all_kcs.tolist()

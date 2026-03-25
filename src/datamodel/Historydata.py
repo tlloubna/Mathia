@@ -12,7 +12,7 @@ class HistoryDATA:
         self.stdmodel=stdmodel
         self.TimeWindow:list=TimeWindow
 
-    def ComputeHistoryFeaturesTWKC(self, Q_mat, df):
+    def ComputeHistoryFeaturesTWKC(self, Q_mat, df, vocab_users=None, vocab_items=None):
 
         # Construire dict_q_mat
         dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
@@ -33,10 +33,14 @@ class HistoryDATA:
 
         #  Boucle par élève
         for idx,stud_id in enumerate(df["user_id"].unique()):
-            print("Stud_id:",idx+1,"/",len(df["user_id"].unique()))
+            #print("Stud_id:",idx+1,"/",len(df["user_id"].unique()))
+            
             df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
             df_stud = df_stud.sort_values("timestamp").to_numpy()
 
+            if df_stud.shape[0] == 0:
+                print(f" Élève {stud_id} n'a AUCUNE interaction dans ce DataFrame !")
+                continue
             X["df"] = np.vstack((X["df"], df_stud))
 
             # Skills
@@ -77,10 +81,21 @@ class HistoryDATA:
             X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
 
         # One-hot users/items
-        enc_users = OneHotEncoder()
-        enc_items = OneHotEncoder()
-        X["users"] = enc_users.fit_transform(X["df"][:, 0].reshape(-1, 1))
-        X["items"] = enc_items.fit_transform(X["df"][:, 1].reshape(-1, 1))
+        enc_users = OneHotEncoder(handle_unknown='ignore', sparse_output=True)
+        enc_items = OneHotEncoder(handle_unknown='ignore', sparse_output=True)
+        
+        if vocab_users is not None:
+            enc_users.fit(np.array(vocab_users).reshape(-1, 1))
+        else:
+            enc_users.fit(X["df"][:, 0].reshape(-1, 1))
+        
+        if vocab_items is not None:
+            enc_items.fit(np.array(vocab_items).reshape(-1, 1))
+        else:
+            enc_items.fit(X["df"][:, 1].reshape(-1, 1))
+
+        X["users"] = enc_users.transform(X["df"][:, 0].reshape(-1, 1))
+        X["items"] = enc_items.transform(X["df"][:, 1].reshape(-1, 1))
         self.user_ids = enc_users.categories_[0].tolist()  
         self.item_ids = enc_items.categories_[0].tolist()  
         listOfKC = []

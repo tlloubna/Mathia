@@ -7,10 +7,13 @@ class OurQueue:
 
     From JJ's KTM repository: https://github.com/jilljenn/ktm.
     """
-    def __init__(self):
+    def __init__(self, window_lengths=None):
         #self.now = None
         self.queue = []
-        self.window_lengths = [3600 * 24 * 30, 3600 * 24 * 7, 3600 * 24, 3600]
+        if window_lengths is not None:
+            self.window_lengths = [w for w in window_lengths if w !=float("inf")]
+        else:
+            self.window_lengths = [3600 * 24 * 30, 3600 * 24 * 7, 3600 * 24, 3600]
         self.cursors = [0] * len(self.window_lengths)
 
     def __len__(self):

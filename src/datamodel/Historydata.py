@@ -4,16 +4,19 @@ from scipy import sparse
 from sklearn.preprocessing import OneHotEncoder
 from utils.this_queue import OurQueue
 from collections import defaultdict, Counter
-TIME_WINDOWS = [3600, 86400, 604800, 2592000, float("inf")]
-NB_OF_TIME_WINDOWS = len(TIME_WINDOWS)
+TIME_WINDOWS_DEFAULT = [3600, 86400, 604800, 2592000, float("inf")]
+#NB_OF_TIME_WINDOWS = len(TIME_WINDOWS)
 
 class HistoryDATA:
-    def __init__(self,stdmodel:STD.StudentDATA=None,TimeWindow:list=[3600,86400,604800,float("inf")]):
+    def __init__(self,stdmodel:STD.StudentDATA=None,TimeWindow:list=None):
         self.stdmodel=stdmodel
-        self.TimeWindow:list=TimeWindow
+        self.TimeWindow:list=TimeWindow if TimeWindow is not None else TIME_WINDOWS_DEFAULT
+        self.n_tw=len(self.TimeWindow)
 
+    def make_queue(self):
+        return OurQueue(window_lengths=self.TimeWindow)
     def ComputeHistoryFeaturesTWKC(self, Q_mat, df, vocab_users=None, vocab_items=None):
-
+        n_tw=self.n_tw
         # Construire dict_q_mat
         dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
         for item, kc in np.argwhere(Q_mat == 1):
@@ -22,14 +25,14 @@ class HistoryDATA:
         #  Initialiser X
         X = {
             "skills": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
-            "attempts": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * NB_OF_TIME_WINDOWS))),
-            "wins": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * NB_OF_TIME_WINDOWS))),
+            "attempts": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * n_tw))),
+            "wins": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * n_tw))),
             "fails": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
             "df": np.empty((0, 5))
         }
 
         #  Files glissantes
-        q = defaultdict(lambda: OurQueue())
+        q = defaultdict(self.make_queue)
 
         #  Boucle par élève
         for idx,stud_id in enumerate(df["user_id"].unique()):
@@ -48,20 +51,20 @@ class HistoryDATA:
             X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
 
             # Attempts tw_kc
-            attempts = np.zeros((df_stud.shape[0], Q_mat.shape[1] * NB_OF_TIME_WINDOWS))
+            attempts = np.zeros((df_stud.shape[0], Q_mat.shape[1] * n_tw))
             for l, (item_id, t) in enumerate(zip(df_stud[:, 1], df_stud[:, 2])):
                 for kc in dict_q_mat[item_id]:
-                    attempts[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    attempts[l, kc*n_tw:(kc+1)*n_tw] = np.log(
                         1 + np.array(q[stud_id, kc].get_counters(t))
                     )
                     q[stud_id, kc].push(t)
             X["attempts"] = sparse.vstack([X["attempts"], sparse.csr_matrix(attempts)])
 
             # Wins tw_kc
-            wins = np.zeros((df_stud.shape[0], Q_mat.shape[1] * NB_OF_TIME_WINDOWS))
+            wins = np.zeros((df_stud.shape[0], Q_mat.shape[1] * n_tw))
             for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
                 for kc in dict_q_mat[item_id]:
-                    wins[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    wins[l, kc*n_tw:(kc+1)*n_tw] = np.log(
                         1 + np.array(q[stud_id, kc, "correct"].get_counters(t))
                     )
                     if correct:
@@ -118,7 +121,7 @@ class HistoryDATA:
     
 
     def ComputeHistoryFeaturesALPHASK(self, Q_mat, df):
-
+        n_tw=self.n_tw
         # Construire dict_q_mat
         dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
         for item, kc in np.argwhere(Q_mat == 1):
@@ -134,13 +137,13 @@ class HistoryDATA:
         X = {
             "users_kc": sparse.csr_matrix(np.empty((0, n_pairs))),  
             "skills":   sparse.csr_matrix(np.empty((0, n_kc))),
-            "attempts": sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
-            "wins":     sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
+            "attempts": sparse.csr_matrix(np.empty((0, n_kc * n_tw))),
+            "wins":     sparse.csr_matrix(np.empty((0, n_kc * n_tw))),
             "fails":    sparse.csr_matrix(np.empty((0, n_kc))),
             "df":       np.empty((0, 5))
         }
 
-        q = defaultdict(lambda: OurQueue())
+        q = defaultdict(self.make_queue)
 
         # Boucle par élève
         for idx, stud_id in enumerate(df["user_id"].unique()):
@@ -159,8 +162,8 @@ class HistoryDATA:
             skills_temp = Q_mat[df_stud[:, 1].astype(int)]
             X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
 
-            attempts  = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
-            wins      = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
+            attempts  = np.zeros((n_inter, n_kc * n_tw))
+            wins      = np.zeros((n_inter, n_kc * n_tw))
 
             users_kc_local = np.zeros((n_inter, n_kc))  # bloc local (n_inter × n_kc)
                 
@@ -168,11 +171,11 @@ class HistoryDATA:
                     df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
                 for kc in dict_q_mat[item_id]:
                     #Attempts
-                    attempts[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    attempts[l, kc*n_tw:(kc+1)*n_tw] = np.log(
                         1 + np.array(q[stud_id, kc].get_counters(t))
                     )
                     #Wins
-                    wins[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    wins[l, kc*n_tw:(kc+1)*n_tw] = np.log(
                         1 + np.array(q[stud_id, kc, "correct"].get_counters(t))
                     )
                     #user_kc
@@ -230,6 +233,7 @@ class HistoryDATA:
                             pour être inclus dans alpha_sk
         """
         # Construire dict_q_mat
+        n_tw=self.n_tw
         dict_q_mat = {i: set() for i in range(Q_mat.shape[0])}
         for item, kc in np.argwhere(Q_mat == 1):
             dict_q_mat[item].add(kc)
@@ -269,13 +273,13 @@ class HistoryDATA:
         X = {
             "users_kc": sparse.csr_matrix(np.empty((0, n_pairs))),
             "skills":   sparse.csr_matrix(np.empty((0, n_kc))),
-            "attempts": sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
-            "wins":     sparse.csr_matrix(np.empty((0, n_kc * NB_OF_TIME_WINDOWS))),
+            "attempts": sparse.csr_matrix(np.empty((0, n_kc * n_tw))),
+            "wins":     sparse.csr_matrix(np.empty((0, n_kc * n_tw))),
             "fails":    sparse.csr_matrix(np.empty((0, n_kc))),
             "df":       np.empty((0, 5))
         }
 
-        q = defaultdict(lambda: OurQueue())
+        q = defaultdict(self.make_queue)
 
         for idx, stud_id in enumerate(df["user_id"].unique()):
             print(f"Stud_id: {idx+1}/{n_users}")
@@ -294,8 +298,8 @@ class HistoryDATA:
                                         sparse.csr_matrix(skills_temp)])
 
             # Attempts + Wins
-            attempts = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
-            wins     = np.zeros((n_inter, n_kc * NB_OF_TIME_WINDOWS))
+            attempts = np.zeros((n_inter, n_kc * n_tw))
+            wins     = np.zeros((n_inter, n_kc * n_tw))
 
             users_kc_local = np.zeros((n_inter, n_kc_top))
 
@@ -303,10 +307,10 @@ class HistoryDATA:
                     df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
 
                 for kc in dict_q_mat[item_id]:
-                    attempts[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    attempts[l, kc*n_tw:(kc+1)*n_tw] = np.log(
                         1 + np.array(q[stud_id, kc].get_counters(t))
                     )
-                    wins[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    wins[l, kc*n_tw:(kc+1)*n_tw] = np.log(
                         1 + np.array(q[stud_id, kc, "correct"].get_counters(t))
                     )
 
@@ -371,12 +375,12 @@ class HistoryDATA:
             dict_q_mat[item].add(kc)
         X = {
             "skills": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
-            "ratio": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * NB_OF_TIME_WINDOWS))),
+            "ratio": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * self.n_tw))),
             "fails": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
             "df": np.empty((0, 5))
         }
 
-        q = defaultdict(lambda: OurQueue())
+        q = defaultdict(self.make_queue)
 
         for idx, stud_id in enumerate(df["user_id"].unique()):
             print("Stud_id:", idx+1, "/", len(df["user_id"].unique()))
@@ -388,13 +392,13 @@ class HistoryDATA:
             skills_temp = Q_mat[df_stud[:, 1].astype(int)]
             X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
 
-            ratio = np.zeros((df_stud.shape[0], Q_mat.shape[1] * NB_OF_TIME_WINDOWS))
+            ratio = np.zeros((df_stud.shape[0], Q_mat.shape[1] * self.n_tw))
             for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
                 for kc in dict_q_mat[item_id]:
                     w = np.array(q[stud_id, kc, "correct"].get_counters(t))
                     a = np.array(q[stud_id, kc].get_counters(t))
                     
-                    ratio[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    ratio[l, kc*self.n_tw:(kc+1)*self.n_tw] = np.log(
                         (1 + w) / (1 + a)
                     )
                     
@@ -453,12 +457,12 @@ class HistoryDATA:
         X = {
             "users_kc": sparse.csr_matrix(np.empty((0, n_pairs))), 
             "skills": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
-            "ratio": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * NB_OF_TIME_WINDOWS))),
+            "ratio": sparse.csr_matrix(np.empty((0, Q_mat.shape[1] * self.n_tw))),
             "fails": sparse.csr_matrix(np.empty((0, Q_mat.shape[1]))),
             "df": np.empty((0, 5))
         }
 
-        q = defaultdict(lambda: OurQueue())
+        q = defaultdict(self.make_queue)
 
         for idx, stud_id in enumerate(df["user_id"].unique()):
             print("Stud_id:", idx+1, "/", len(df["user_id"].unique()))
@@ -471,14 +475,14 @@ class HistoryDATA:
             skills_temp = Q_mat[df_stud[:, 1].astype(int)]
             X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
 
-            ratio = np.zeros((df_stud.shape[0], Q_mat.shape[1] * NB_OF_TIME_WINDOWS))
+            ratio = np.zeros((df_stud.shape[0], Q_mat.shape[1] * self.n_tw))
             users_kc_local = np.zeros((n_inter, n_kc))
             for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
                 for kc in dict_q_mat[item_id]:
                     w = np.array(q[stud_id, kc, "correct"].get_counters(t))
                     a = np.array(q[stud_id, kc].get_counters(t))
                     
-                    ratio[l, kc*NB_OF_TIME_WINDOWS:(kc+1)*NB_OF_TIME_WINDOWS] = np.log(
+                    ratio[l, kc*self.n_tw:(kc+1)*self.n_tw] = np.log(
                         (1 + w) / (1 + a)
                     )
                     #user_kc

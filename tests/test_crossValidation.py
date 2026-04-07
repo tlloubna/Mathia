@@ -56,21 +56,21 @@ def Test_His(nb_folds,data,Qmat,perc_init,his:history.HistoryDATA=None,):
 
 def Test_His_Pseudo(nb_folds,data,Qmat,perc_init,his:history.HistoryDATA=None,):
     cross_valid=cv.CrossValid(data,NAME_FOLDER,nb_folds,perc_init,DATA_FOLDER)
-    for fold_id in range(nb_folds):
-        print(f"Processing fold {fold_id + 1}/{nb_folds}...")
-        train_ids_pseudo,test_ids_pseudo=cross_valid.getfold(fold_id,"pseudo_strong")
-        df_train=data.loc[train_ids_pseudo]
-        df_test=data.loc[test_ids_pseudo]
+    #A revoir car j'ai enlver pour traier le dossier 4, je l'ai pas traite avant je ne sais pourquoi :-)
+    print(f"Processing fold {4 + 1}/{nb_folds}...")
+    train_ids_pseudo,test_ids_pseudo=cross_valid.getfold(4,"pseudo_strong")
+    df_train=data.loc[train_ids_pseudo]
+    df_test=data.loc[test_ids_pseudo]
 
-        all_users=sorted(data['user_id'].unique())
-        all_items=sorted(data['item_id'].unique())
-        X_train,user_ids,item_ids,listOfKC=his.ComputeHistoryFeaturesTWKC(Q_mat=Qmat,df=df_train,vocab_users=all_users,vocab_items=all_items)
-        X_test,_,_,_=his.ComputeHistoryFeaturesTWKC(Q_mat=Qmat,df=df_test,vocab_users=all_users,vocab_items=all_items)
+    all_users=sorted(data['user_id'].unique())
+    all_items=sorted(data['item_id'].unique())
+    X_train,user_ids,item_ids,listOfKC=his.ComputeHistoryFeaturesTWKC(Q_mat=Qmat,df=df_train,vocab_users=all_users,vocab_items=all_items)
+    X_test,_,_,_=his.ComputeHistoryFeaturesTWKC(Q_mat=Qmat,df=df_test,vocab_users=all_users,vocab_items=all_items)
 
-        sparse.save_npz(os.path.join(DATA_FOLDER,NAME_FOLDER,"pseudo_strong","folds",f"X_train_fold_{fold_id}.npz"),sparse.csr_matrix(X_train))
-        sparse.save_npz(os.path.join(DATA_FOLDER,NAME_FOLDER,"pseudo_strong","folds",f"X_test_fold_{fold_id}.npz"),sparse.csr_matrix(X_test))
-        np.savez(os.path.join(DATA_FOLDER,NAME_FOLDER,"pseudo_strong","folds",f"history_metadata_{N_STUDENTS}std_fold_{fold_id}.npz"), user_ids=user_ids, item_ids=item_ids, kc_list=listOfKC)
-    
+    sparse.save_npz(os.path.join(DATA_FOLDER,NAME_FOLDER,"pseudo_strong","folds",f"X_train_fold_{4}.npz"),sparse.csr_matrix(X_train))
+    sparse.save_npz(os.path.join(DATA_FOLDER,NAME_FOLDER,"pseudo_strong","folds",f"X_test_fold_{4}.npz"),sparse.csr_matrix(X_test))
+    np.savez(os.path.join(DATA_FOLDER,NAME_FOLDER,"pseudo_strong","folds",f"history_metadata_{N_STUDENTS}std_fold_{4}.npz"), user_ids=user_ids, item_ids=item_ids, kc_list=listOfKC)
+
     print("Data saved for all pseudo-strong folds.")
 
 
@@ -223,7 +223,7 @@ def plot_calibration_complete(all_results, method="strongest"):
         print(f"{i+1:<5} {pp:>6.3f}          {pt_glob:>6.3f}               {pt_mean:>6.3f} ± {pt_std:>5.3f}")
 
 if __name__ == "__main__":
-    time_execution=4
+    time_execution=5
     if time_execution==1:
         data=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
         start=time.time()
@@ -254,14 +254,14 @@ if __name__ == "__main__":
         print(f"Execution time: {end - start:.2f} seconds")
 
     elif time_execution==5:
-        results_path=os.path.join(DATA_FOLDER, NAME_FOLDER, "pseudo_strong", "cross_validation_results.joblib")
+        results_path=os.path.join(DATA_FOLDER, NAME_FOLDER, "strongest", "cross_validation_results.joblib")
         loaded = joblib.load(results_path)
         all_results = loaded["all_results"]
-        plot_calibration_complete(all_results, method="pseudo_strong")
+        plot_calibration_complete(all_results, method="strongest")
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!done")
 
     elif time_execution==6:
-        results_path=os.path.join(DATA_FOLDER, NAME_FOLDER, "pseudo_strong", "cross_validation_results.joblib")
+        results_path=os.path.join(DATA_FOLDER, NAME_FOLDER, "strongest", "cross_validation_results.joblib")
         loaded = joblib.load(results_path)
         all_results = loaded["all_results"]
         print_summary(all_results, method="pseudo_strong", nb_folds=5)

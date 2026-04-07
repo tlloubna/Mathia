@@ -118,7 +118,7 @@ def Test_LearningCurve(model:das3h.DAS3HModel, data, Qmat, nb_folds=5, method="s
 
 def statistical_analysis_learning_curve(results_by_percentage, metric="AUC"):
     percentages = results_by_percentage["percentages"]
-    values_by_fold = results_by_percentage[f"{metric}_by_fold"]
+    values_by_fold = results_by_percentage[f"{metric}"]
 
     print(f"ANALYSE STATISTIQUE — {metric}")
     # H0: Toutes les moyennes sont égales (pas d'effet du pourcentage)
@@ -274,7 +274,7 @@ def plot_learning_curve(results_by_percentage):
    
     plt.show()
 if __name__ == "__main__":
-    time_execution=1
+    time_execution=2
     if time_execution==1:
         data=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
         Qmat = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()

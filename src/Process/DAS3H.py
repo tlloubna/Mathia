@@ -78,7 +78,14 @@ class DAS3HModel:
             "TPR":    roc_curve(y_test, y_pred)[1],
         }
     
-    def fit_with_split(self, X_train, X_test):
+    def fit_with_split(self, X_train, X_test,n_user_ids=None, item_ids=None, kc_list=None,n_tw=5):
+        self.n_users  = len(n_user_ids)
+        self.n_items  = len(item_ids)
+        self.n_kc     = len(kc_list)
+        self.n_tw     = n_tw
+        self.user_ids = list(n_user_ids)
+        self.item_ids = list(item_ids)
+        self.kc_list  = list(kc_list)   
         y_train = X_train[:, 3].toarray().flatten()
         y_test  = X_test[:, 3].toarray().flatten()
         cols = list(range(X_train.shape[1]))
@@ -89,7 +96,7 @@ class DAS3HModel:
         X_test  = X_test[:, cols_test]
         pipe = Pipeline([
             ("scaler", MaxAbsScaler()),
-            ("lr", LogisticRegression(solver="saga", max_iter=500, C=self.C))
+            ("lr", LogisticRegression(solver="saga", max_iter=2000, C=self.C))
         ])
 
         pipe.fit(X_train, y_train)

@@ -1,14 +1,11 @@
 import src.Process.DAS3H as das3H
 from utils.this_queue import OurQueue
-import src.datamodel.Studentdata as STD
-from collections import defaultdict
-import src.Process.Simulation.utils as simu_utils
 import random
 import pandas as pd
 import numpy as np
 class SimulationH():
     def __init__(self,students=None,exos=None,kcs=None,data:pd.DataFrame=None,model:das3H.DAS3HModel=None,qmat=None,heuristic=None,history:bool=False,
-                 weeks_to_simulate=16,T_max_review_min=60,t0=0):
+                 weeks_to_simulate=16,T_max_review_min=60,t0=0,kc_list=None):
         self.students=students
         self.exos=exos
         self.kcs=kcs
@@ -30,10 +27,15 @@ class SimulationH():
             if len(items) > 0:
                 self.items_per_kc[kc] = items
 
-    
+        self.kc_name_to_idx = {kc_list[i]: i for i in range(len(kc_list))}
+        self.kc_idx_to_name = {i: kc_list[i] for i in range(len(kc_list))}
+
+        
+
     def sigmoid(self,x):
         return 1 / (1 + np.exp(-x))
-    def Loopweek_csTime(self, student, week_num, params, kcs_introduced, queues, t_start):
+    
+    def loopWihoudDas3H(self, student, week_num, params, kcs_introduced, queues, t_start):
         t_current = t_start
         t_end = t_start + self.T_max_review_min * 60
         
@@ -42,6 +44,36 @@ class SimulationH():
                 week=week_num, kcs_introduced=kcs_introduced,q_mat_=self.qmat,student=student,
                 queues=queues,params=params,t_current=t_current, items_per_kc=self.items_per_kc
             )
+            if item is None:
+                break
+            p_correct =np.random.uniform(0,1,dtype=float)
+            correct = 0 if p_correct > 0.5 else 1
+            for kc in kcs:
+                queues[kc]["attempts"].push(t_current)
+                if correct:
+                    queues[kc]["wins"].push(t_current)
+                if hasattr(self.heuristic, 'update'):
+                    self.heuristic.update(kc, week_num)
+            exo_duration = np.random.randint(2, 8) * 60
+            t_current += exo_duration
+            self.simulation_results.append({
+                "student": student, "week": week_num,
+                "item": item, "kcs": kcs,
+                "p_correct": p_correct, "correct": correct,
+                "timestamp": t_current,
+            })
+
+    def Loopweek_csTime(self, student, week_num, params, kcs_introduced, queues, t_start):
+        t_current = t_start
+        t_end = t_start + self.T_max_review_min * 60
+        
+        while t_current < t_end:
+            _,pmr_kc=self.compute_pmr_all_kcs(student=student,params=params,queues=queues,t_eval=t_current)
+
+            item, kcs = self.heuristic.HeuristicTochooseItemfromQ(
+                        week=week_num, kcs_introduced=kcs_introduced,q_mat_=self.qmat,student=student,
+                        queues=queues,params=params,t_current=t_current, items_per_kc=self.items_per_kc,dictPkcs=pmr_kc,kc_idx_to_name=self.kc_idx_to_name,kc_name_to_idx=self.kc_name_to_idx
+                    )
             if item is None:
                 break
 
@@ -112,7 +144,7 @@ class SimulationH():
         
                 kcs_introduced.extend(new_kcs)
                 self.Loopweek_csTime(student, week, params, kcs_introduced, queues, t_start,)
-                pmr_all=self.compute_pmr_all_kcs(student, params, queues, t_start)
+                pmr_all,_=self.compute_pmr_all_kcs(student, params, queues, t_start)
                 w_key = week + 1
                 if w_key not in weekly_pmr:
                     weekly_pmr[w_key] = []
@@ -203,10 +235,12 @@ class SimulationH():
                 if week > 0:
                     
                     for rep in range(r):
+                        _, pmr_kc = self.compute_pmr_all_kcs(student, params, queues, t_week)
                         item, kcs_item = self.heuristic.HeuristicTochooseItemfromQ(
                             week=week, kcs_introduced=kcs_introduced, q_mat_=self.qmat,
                             student=student, queues=queues, params=params,
-                            t_current=t_week, items_per_kc=self.items_per_kc
+                            t_current=t_week, items_per_kc=self.items_per_kc,
+                            dictPkcs=pmr_kc, kc_idx_to_name=self.kc_idx_to_name, kc_name_to_idx=self.kc_name_to_idx
                         )
                         if item is None:
                             continue
@@ -234,7 +268,7 @@ class SimulationH():
                                 queues[k]["wins"].push(t_week)
                             if hasattr(self.heuristic, 'update'):
                                 self.heuristic.update(k, week)
-                pmr_all = self.compute_pmr_all_kcs(student, params, queues, t_week)
+                pmr_all,_ = self.compute_pmr_all_kcs(student, params, queues, t_week)
                 
                 w_key = week + 1
                 if w_key not in weekly_pmr:
@@ -254,6 +288,7 @@ class SimulationH():
     def compute_pmr_all_kcs(self, student, params, queues, t_eval):
         
         pmr_list = []
+        pmr_kcs={}
         alpha_s = params["alpha_s"][student]
         for kc in self.kcs:
             beta = params["beta_j"].get(kc, 0)
@@ -277,6 +312,8 @@ class SimulationH():
             # Choffin utilise delta=-1 fixe pour le PMR
             logit = alpha_s - delta_j + beta + h
             #print(f"Student {student}, KC {kc},cw: {cw}, ca: {ca}, logit: {logit:.2f}, PMR: {self.sigmoid(logit):.4f}")
-            pmr_list.append(self.sigmoid(logit))
+            p_=self.sigmoid(logit)
+            pmr_list.append(p_)
+            pmr_kcs[kc]=p_
         #print(f"Student {student}, PMR all KCs: {np.mean(pmr_list):.4f}")
-        return np.mean(pmr_list)
+        return np.mean(pmr_list),pmr_kcs

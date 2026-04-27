@@ -102,7 +102,7 @@ class HistoryDATA:
         self.user_ids = enc_users.categories_[0].tolist()  
         self.item_ids = enc_items.categories_[0].tolist()  
         listOfKC = []
-        for kc_raw in df["KC"].unique():
+        for kc_raw in df["kc_names"].unique():
             for elt in kc_raw.split("~~"):
                 listOfKC.append(elt)
         listOfKC = np.unique(listOfKC)

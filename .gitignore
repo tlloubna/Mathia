@@ -6,3 +6,9 @@ tests/test_mongodb.py
 tests/test_das3hMathia.py
 tests/test_ManageMathia.py
 tests/test_ExploreMathia.py
+tests/test_ablation.py
+tests/test_CreateDependKCs.py
+tests/test_data.py
+tests/test_estimate_alpha.py
+APIMathiaLoubnatest.py
+GraphSkills.py

@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from sklearn.model_selection import KFold
-
+"""Inspirer de modele de dash" de choffin 2020 github :https://github.com/BenoitChoffin/das3h.git """
 class CrossValid:
     def __init__(self,data,name_dataset,nb_folds=5,perc_init=0.2,data_Folder="data/",random_state=42):
         self.data=data

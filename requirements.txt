@@ -4,3 +4,8 @@ scikit-learn
 pandas
 pywFM
 pymongo
+fastapi
+uvicorn
+matplotlib
+seaborn 
+networkx

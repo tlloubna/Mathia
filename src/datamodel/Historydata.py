@@ -36,7 +36,7 @@ class HistoryDATA:
 
         #  Boucle par élève
         for idx,stud_id in enumerate(df["user_id"].unique()):
-            #print("Stud_id:",idx+1,"/",len(df["user_id"].unique()))
+            print("Stud_id:",idx+1,"/",len(df["user_id"].unique()))
             
             df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
             df_stud = df_stud.sort_values("timestamp").to_numpy()
@@ -102,7 +102,7 @@ class HistoryDATA:
         self.user_ids = enc_users.categories_[0].tolist()  
         self.item_ids = enc_items.categories_[0].tolist()  
         listOfKC = []
-        for kc_raw in df["kc_names"].unique():
+        for kc_raw in df["KC"].unique():
             for elt in kc_raw.split("~~"):
                 listOfKC.append(elt)
         listOfKC = np.unique(listOfKC)

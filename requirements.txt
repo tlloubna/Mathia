@@ -5,7 +5,7 @@ pandas
 pywFM
 pymongo
 fastapi
-uvicorn
+uvicorn[standard]
 matplotlib
 seaborn 
 networkx

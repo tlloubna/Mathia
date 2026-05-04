@@ -46,8 +46,10 @@ class StudentDATA:
         dict2_kc = {i: kc for i, kc in enumerate(listOfKC)}
 
         # Factoriser user_id et item_id APRÈS filtrage
-        self.data["user_id"], _ = pd.factorize(self.data["user_id"])
-        self.data["item_id"], _ = pd.factorize(self.data["item_id"])
+        self.data["user_id"], user_uniques = pd.factorize(self.data["user_id"])
+        self.data["item_id"], item_uniques = pd.factorize(self.data["item_id"])
+        self.user_mapping = {orig: fact for fact, orig in enumerate(user_uniques)}
+        self.item_mapping = {orig: fact for fact, orig in enumerate(item_uniques)}
 
         # Encoder timestamp
         self.data["timestamp"] = pd.to_datetime(self.data["first_transaction_time"])
@@ -180,7 +182,7 @@ class Mathiadata(StudentDATA):
 
         df = df.rename(columns={
             "student_id": "user_id",
-            "kc_ids":     "KC",
+            "kc_names":     "KC",
         })
         #le nombre de sec écoulées depuis le 1ier janvier 1970 à 00:00:00 UTC
         #1970 est la date de la naisance de 1970
@@ -200,11 +202,12 @@ class Mathiadata(StudentDATA):
         df["inter_id"] = df.index
         df = df.groupby("user_id").filter(lambda x: len(x) >= min_intercation)
         df = df.reset_index(drop=True)
-        df["user_id"], _ = pd.factorize(df["user_id"])  
-        df["item_id"], _ = pd.factorize(df["item_id"]) 
-        df["inter_id"] = df.index
-
         
+        df["user_id"], user_uniques = pd.factorize(df["user_id"])
+        df["item_id"], item_uniques = pd.factorize(df["item_id"])
+        self.user_mapping = {orig: fact for fact, orig in enumerate(user_uniques)}
+        self.item_mapping = {orig: fact for fact, orig in enumerate(item_uniques)}
+        df["inter_id"] = df.index
 
         all_kcs = []
         for kc_raw in df["KC"].unique():
@@ -223,7 +226,7 @@ class Mathiadata(StudentDATA):
                 if kc in kc_to_idx:
                     Q_mat[int(item_skill[i, 0]), kc_to_idx[kc]] = 1
 
-        df = df[["user_id", "item_id", "KC","kc_names", "timestamp", "correct", "inter_id"]]
+        df = df[["user_id", "item_id", "KC", "timestamp", "correct", "inter_id"]]
         self.data   = df
         self.Q      = Q_mat
         self.KComp  = all_kcs.tolist()

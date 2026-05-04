@@ -43,12 +43,17 @@ class DAS3HModel:
         #On split par utilisateur pour éviter les fuites temporelles entre train et test
         #Exemple : si un étudiant a 10 interactions, on prend les 2 premières pour le train et les 8 suivantes pour le test (si perc_init=0.2)
         #Contre En split aléatoire, on pourrait avoir les 10 interactions de cet étudiant dans le train et aucune dans le test, ce qui fausserait l'évaluation
-        for user in np.unique(users_col):
-            user_mask = np.where(users_col == user)[0]
-            user_sorted = user_mask[np.argsort(timestamps[user_mask])]
-            split = max(1, round(perc_init * len(user_sorted)))
-            train_indices.extend(user_sorted[:split].tolist())
-            test_indices.extend(user_sorted[split:].tolist())
+
+        if perc_init>=1.0:
+            train_indices=list(range(X.shape[0]))
+            test_indices= []
+        else: 
+            for user in np.unique(users_col):
+                user_mask = np.where(users_col == user)[0]
+                user_sorted = user_mask[np.argsort(timestamps[user_mask])]
+                split = max(1, round(perc_init * len(user_sorted)))
+                train_indices.extend(user_sorted[:split].tolist())
+                test_indices.extend(user_sorted[split:].tolist())
         
         cols = list(range(X.shape[1]))
         cols.remove(3)
@@ -65,18 +70,21 @@ class DAS3HModel:
 
         pipe.fit(X_train, y_train)
         self.model = pipe
+        if test_indices: 
+            y_pred = pipe.predict_proba(X_test)[:, 1]
 
-        y_pred = pipe.predict_proba(X_test)[:, 1]
-
-        return {
-            "AUC":    roc_auc_score(y_test, y_pred),
-            "NLL":    log_loss(y_test, y_pred),
-            "RMSE":   np.sqrt(mean_squared_error(y_test, y_pred)),
-            "y_test": y_test,
-            "y_pred": y_pred,
-            "FPR":    roc_curve(y_test, y_pred)[0],
-            "TPR":    roc_curve(y_test, y_pred)[1],
-        }
+            return {
+                "AUC":    roc_auc_score(y_test, y_pred),
+                "NLL":    log_loss(y_test, y_pred),
+                "RMSE":   np.sqrt(mean_squared_error(y_test, y_pred)),
+                "y_test": y_test,
+                "y_pred": y_pred,
+                "FPR":    roc_curve(y_test, y_pred)[0],
+                "TPR":    roc_curve(y_test, y_pred)[1],
+            }
+        
+        else : 
+            return {"mode" : "production", "n_train": len(train_indices)}
     
     def fit_with_split(self, X_train, X_test,n_user_ids=None, item_ids=None, kc_list=None,n_tw=5):
         self.n_users  = len(n_user_ids)

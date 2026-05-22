@@ -62,7 +62,7 @@ class MuBackH():
     def HeuristicTochooseItemfromQ(self, week=None, kcs_introduced=None, q_mat_=None, items_per_kc=None, dictPkcs=None,seuil=0.6,kc_idx_to_name=None,kc_name_to_idx=None,**kwargs):
         kc = self.ChooseKC(week, kcs_introduced)
         
-        kc=self.VerifyIfmastred(kc,dictPKcs=dictPkcs,seuil=seuil,kc_idx_to_name=kc_idx_to_name,kc_name_to_idx=kc_name_to_idx)
+        #kc=self.VerifyIfmastred(kc,dictPKcs=dictPkcs,seuil=seuil,kc_idx_to_name=kc_idx_to_name,kc_name_to_idx=kc_name_to_idx)
         if kc is None:
             return None, []
         items = items_per_kc.get(kc, [])

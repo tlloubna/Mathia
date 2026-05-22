@@ -105,6 +105,9 @@ def LookForKNN(profil_x, Q_profil, vector_alpha, K, min_kc_commun):
     neighbours = distances[:K]
     return neighbours
 
+def estimate_sigma_noyau(neighbours):
+    dists = [dist for _, dist in neighbours]
+    return np.median(dists)
 
 def ComputePriorKNN(neighbours, vector_alpha, sigma_noyau):
     if not neighbours:
@@ -112,7 +115,8 @@ def ComputePriorKNN(neighbours, vector_alpha, sigma_noyau):
  
     poids = []
     alphas = []
- 
+    """if len(neighbours) > 0:
+        sigma_noyau = estimate_sigma_noyau(neighbours)"""
     for idx, dist in neighbours:
         w = np.exp(-dist ** 2 / (2 * sigma_noyau ** 2))
         poids.append(w)
@@ -149,8 +153,7 @@ def estimate_alpha_knn(X_student, y_student, items_x, corrects_x,
     profil_x = CreateProfilX(items_x, corrects_x, q_matrix, n_kc)
     neighbours = LookForKNN(profil_x, Q_profil, vector_alpha, K, min_kc_commun)
     
-    print("Distances des 10 premiers voisins:", [round(d, 3) for _, d in neighbours[:10]])
-    print("KC valides dans le profil:", np.sum(~np.isnan(profil_x)))
+   
 
     if not neighbours:
         prior_mean = prior_mean_global
@@ -203,7 +206,7 @@ def ComputePrior(params):
     
     alphas = list(params["alpha_s"].values())
     prior_mean = np.mean(alphas)
-    prior_std =10
+    prior_std =50 #np.std(alphas)
     bounds = [-4,4]
     return prior_mean, prior_std, bounds
 
@@ -231,9 +234,6 @@ def validate_split_temporel(model, X_full, df, q_matrix, students_test,
                             K=30, N0=15, sigma_noyau=0.3, min_kc_commun=3,params=None):
     if n_values is None:
         n_values = [10, 20, 30, 50, 75, 100, 150, 200, 1000]
- 
-    
-    
     pipe = model.model
     scaler = pipe.named_steps["scaler"]
     lr = pipe.named_steps["lr"]
@@ -331,6 +331,7 @@ def plot_erreur_alpha_compare(df_summary):
     plt.tight_layout()
     plt.show()
 
+
 def plot_alpha_convergence_compare(df_results, students_plot):
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     for s in students_plot:
@@ -357,10 +358,23 @@ def plot_alpha_convergence_compare(df_results, students_plot):
     plt.tight_layout()
     plt.show()
 
+
+def plotcorr(taux_r,alpha_vrai,alpha_z):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(taux_r,alpha_vrai,label="alpha_vrai")
+    ax.plot(taux_r,alpha_z,label="alpha_estime")
+    ax.set_xlabel("taux_r")
+    ax.set_ylabel("alpha")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
+    time_ex=1
     df, q_matrix, kc_list, model, results, X_full = load_Model()
     params = model.get_params()
-    eligible, students_test = chooseStudent( df,params=params, min_interactions=500, n_test=20)
+    eligible, students_test = chooseStudent( df,params=params, min_interactions=1000, max_interactions=5000,n_test=10)
  
     
     params["pipeline"] = model.model
@@ -372,20 +386,32 @@ if __name__ == "__main__":
     )
  
     print("Construction de la matrice de profils...")
-    Q_profil, vector_alpha, students_ref = CreateProfilMatrix(df, q_matrix, params)
+    if time_ex == 0:
+        Q_profil, vector_alpha, students_ref = CreateProfilMatrix(df, q_matrix, params)
+        np.save(os.path.join(DATA_FOLDER, "Q_profil.npy"), Q_profil)
+        np.save(os.path.join(DATA_FOLDER, "vector_alpha.npy"), vector_alpha)
+        np.save(os.path.join(DATA_FOLDER, "students_ref.npy"), np.array(students_ref, dtype=object))
+    else:
+        Q_profil = np.load(os.path.join(DATA_FOLDER, "Q_profil.npy"))
+        vector_alpha = np.load(os.path.join(DATA_FOLDER, "vector_alpha.npy"))
+        students_ref = np.load(os.path.join(DATA_FOLDER, "students_ref.npy"), allow_pickle=True)
+
     print(f"Matrice de profils : {Q_profil.shape}")
  
-    n_values = [10, 20, 30, 50, 75, 100, 150, 200, 250, 300, 400, 500]
+    n_values = [10,20,30,40,50,75,80,100, 150, 200, 250, 300, 400, 500]
  
     all_y, all_p_zero, all_p_base, all_p_knn, df_sum, df_res = validate_split_temporel(
         model, X_full, df, q_matrix, students_test,
         estimator, Q_profil, vector_alpha,
         prior_mean, prior_std,
         n_values=n_values, min_test=30, min_pos_neg=3,
-        K=50, N0=10, sigma_noyau=0.5, min_kc_commun=10,params=params
+        K=30, N0=10, sigma_noyau=0.5, min_kc_commun=20,params=params
     )
     plot_erreur_alpha_compare(df_sum)
-    plot_alpha_convergence_compare(df_res, random.sample(list(students_test), 5))
+    for i in range(0,10,5):
+        plot_alpha_convergence_compare(df_res, students_test[i:i+5])
+    
+    
     print("Done!")
 
 print("!!!!!!!!!!!!!!!!!!!!stop!!!!!!!!!!!!!!!!!!!!")

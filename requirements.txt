@@ -9,3 +9,4 @@ uvicorn[standard]
 matplotlib
 seaborn 
 networkx
+plotly

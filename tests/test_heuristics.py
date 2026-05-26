@@ -22,15 +22,20 @@ NAME_FOLDER="Mathiadata3" #algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
 N_STUDENTS = 35717
 FILE_PATH_JSON = "/home/loubna/Code_Projet_Mathia/Mathia/data/Mathiadata/Kcs_Dependencies/KCs.json"
-
+PROFILES = {
+    "maitrise":       {"n": 9, "window": (0.5, 1.0), "success_rate": 0.90},
+    "en_cours":       {"n": 4, "window": (0.6, 1.0), "success_rate": 0.50},
+    "ancien_oublie":  {"n": 5, "window": (0.0, 0.3), "success_rate": 0.70},
+    "jamais_vu":      {"n": 0, "window": (0.0, 0.0), "success_rate": 0.0},
+}
 import matplotlib.pyplot as plt
-def load_Model():
+"""def load_Model():
     # Load the model
     df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
     q_matrix = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()
     kc_list=np.load(os.path.join(DATA_FOLDER,f"history_metadata_{N_STUDENTS}std.npz"), allow_pickle=True)["kc_list"]
     
-    return df,q_matrix,kc_list
+    return df,q_matrix,kc_list"""
 
 def plot_pmr(all_results_pmr):
     plt.figure(figsize=(10, 6))
@@ -186,10 +191,6 @@ def ComputeGini(simulation_results, pmr_history, studentIndex):
     return weeks, Gini_list
 
 
-    
-
-
-
 def plotHeatMapPMR(simulation_results, pmr_history, studentIndex, 
                    kc_idx_to_name=None, heuristic_name=""):
     data = pd.DataFrame.from_dict(simulation_results)
@@ -328,82 +329,134 @@ def plot_all_diversity_avg(all_gini, all_shannon):
     
     plt.tight_layout()
     plt.show()
-def plot_timeline(detailed_log, kc_idx_to_name=None, heuristic_name="",params=None,student=None,items_per_kc=None):
-    fig, ax = plt.subplots(figsize=(16, 6))
-    chosen_kcs = sorted(set(entry["chosen_kc"] for entry in detailed_log))
-    colors = plt.cm.tab20(np.linspace(0, 1, len(chosen_kcs)))
-    
-    for idx, kc in enumerate(chosen_kcs):
-       
-        pmrs_x = []
-        pmrs_y = []
-        if kc==79:
-            print("stp")
-        
-        for i, entry in enumerate(detailed_log):
-            if kc in entry["pmr_before"]:
-                pmrs_x.append(i)
-                pmrs_y.append(entry["pmr_before"][kc])
-            else : 
-                alpha_s = params["alpha_s"][student]
-                beta = params["beta_j"].get(kc, 0)
-                items = items_per_kc.get(kc, [])
-                if len(items) == 0:
-                    delta_j=-1
-                else:
-                    item=items[0]
-                    delta_j = params["delta_j"][item]
-                queues=entry["queues"]
-                t_eval = entry["t_current"]
-                if kc in queues:
-                    cw = queues[kc]["wins"].get_counters(t_eval)
-                    ca = queues[kc]["attempts"].get_counters(t_eval)
-                else:
-                    cw = [0] * 5
-                    ca = [0] * 5
-                h = sum(
-                    params["theta_wins"].get(kc, [0]*5)[i] * np.log(1 + cw[i])
-                    + params["theta_attempts"].get(kc, [0]*5)[i] * np.log(1 + ca[i])
-                    for i in range(5)
-                )
-                logit = alpha_s - delta_j + beta + h
-                p_=1/(1+np.exp(-logit))
-                pmrs_x.append(i)
-                pmrs_y.append(p_)
-        name = kc_idx_to_name.get(kc, str(kc)) if kc_idx_to_name else str(kc)
-        ax.plot(pmrs_x, pmrs_y, color=colors[idx], alpha=0.6, linewidth=1.5, label=name)
-        
-        for i, entry in enumerate(detailed_log):
-            if entry["chosen_kc"] == kc:
-                marker = "^" if entry["correct"] else "v"
-                ax.scatter(i, entry["pmr_before"].get(kc, 0), marker=marker,
-                          color=colors[idx], s=80, zorder=5, 
-                          edgecolors="black", linewidth=0.5)
-    
-    weeks_seen = set()
+
+
+def plot_timeline(detailed_log, kc_idx_to_name=None, heuristic_name="",
+                  params=None, student=None, items_per_kc=None, curriculum_kcs=None):
+    """
+    Timeline des décisions pour un élève.
+    - Lignes pleines : KCs du curriculum
+    - Lignes pointillées : KCs enfants (hors curriculum, explorés par ZPD)
+    - ★ : révision d'un KC curriculum
+    - ◆ : révision d'un KC enfant
+    - Bande verte : zone ZPD [0.2, 0.7]
+    """
+    if not detailed_log:
+        print("detailed_log vide, rien à tracer.")
+        return
+
+    curriculum_kcs = set(curriculum_kcs) if curriculum_kcs else set()
+
+    # --- Collecter tous les KCs vus dans les logs ---
+    all_kcs = set()
+    for entry in detailed_log:
+        all_kcs.update(entry["pmr_after"].keys())
+    all_kcs = sorted(all_kcs)
+
+    # Séparer curriculum vs enfants
+    kcs_curriculum = [kc for kc in all_kcs if kc in curriculum_kcs]
+    kcs_children = [kc for kc in all_kcs if kc not in curriculum_kcs]
+
+    # --- Séries temporelles ---
+    pmr_series = {kc: [] for kc in all_kcs}
+    x_axis = []
+    review_markers = []  # (x, kc, pmr, is_child)
+
     for i, entry in enumerate(detailed_log):
-        if entry["week"] not in weeks_seen:
-            ax.axvline(i, color="gray", linestyle="--", alpha=0.3)
-            ax.text(i, 1.02, f"S{entry['week']}", fontsize=8,
-                   color="gray", ha="center", transform=ax.get_xaxis_transform())
-            weeks_seen.add(entry["week"])
-    
-    ax.set_xlabel("Itération")
+        x_axis.append(i)
+        for kc in all_kcs:
+            pmr_series[kc].append(entry["pmr_after"].get(kc, np.nan))
+        for kc in entry["kcs_reviewed"]:
+            is_child = kc in entry.get("kcs_are_children", [])
+            pmr_val = entry["pmr_after"].get(kc, np.nan)
+            review_markers.append((i, kc, pmr_val, is_child))
+
+    # --- Plot ---
+    fig, ax = plt.subplots(figsize=(18, 8))
+    cmap = plt.cm.tab20
+    colors = {kc: cmap(j % 20) for j, kc in enumerate(all_kcs)}
+    def kc_label(kc):
+        name = kc_idx_to_name.get(kc, str(kc)) if kc_idx_to_name else str(kc)
+        if kc in curriculum_kcs:
+            return name
+        return f"{name} (enfant)"
+    for kc in kcs_curriculum:
+        ax.plot(x_axis, pmr_series[kc], color=colors[kc], alpha=0.7,
+                linewidth=1.5, label=kc_label(kc))
+
+    for kc in kcs_children:
+        ax.plot(x_axis, pmr_series[kc], color=colors[kc], alpha=0.5,
+                linewidth=1.2, linestyle="--", label=kc_label(kc))
+
+
+    for (x, kc, pmr_val, is_child) in review_markers:
+        if np.isnan(pmr_val):
+            continue
+        if is_child:
+            ax.scatter(x, pmr_val, color=colors[kc], marker="D", s=80,
+                       zorder=5, edgecolors="black", linewidths=0.5)
+        else:
+            ax.scatter(x, pmr_val, color=colors[kc], marker="*", s=120,
+                       zorder=5, edgecolors="black", linewidths=0.5)
+
+    prev_week = detailed_log[0]["week"]
+    tick_positions = [0]
+    tick_labels = [f"Sem. {prev_week}"]
+    for i, entry in enumerate(detailed_log):
+        if entry["week"] != prev_week:
+            ax.axvline(i, color="gray", linestyle="--", alpha=0.4)
+            tick_positions.append(i)
+            tick_labels.append(f"Sem. {entry['week']}")
+            prev_week = entry["week"]
+
+    ax.set_xticks(tick_positions)
+    ax.set_xticklabels(tick_labels, rotation=45, fontsize=9)
+    ax.set_ylim(-0.05, 1.05)
+    ax.set_xlabel("Itérations (par semaine)")
     ax.set_ylabel("PMR")
-    ax.set_ylim(0, 1.05)
-    ax.set_title(f"Timeline des décisions — {heuristic_name}")
-    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=9)
+    ax.set_title(f"Timeline — Élève {student} — {heuristic_name}\n"
+                 f"★ = révision KC curriculum  ◆ = révision KC enfant")
+
+    # Légende
+    if len(all_kcs) <= 25:
+        ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=7,
+                  ncol=1 if len(all_kcs) <= 15 else 2)
+    else:
+        ax.text(1.02, 0.5,
+                f"{len(kcs_curriculum)} KCs curriculum\n{len(kcs_children)} KCs enfants\n(légende masquée)",
+                transform=ax.transAxes, fontsize=9, va="center")
+
     ax.grid(True, alpha=0.2)
     plt.tight_layout()
     plt.show()
-if __name__ == "__main__":
+
+
+def load_Model():
+    df = pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
+    q_matrix = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()
+    kc_list = np.load(os.path.join(DATA_FOLDER, f"history_metadata_{N_STUDENTS}std.npz"), 
+                       allow_pickle=True)["kc_list"]
+    kc_to_remove = "Être capable de privilégier les produits meilleurs pour sa santé, l'environnement et la vie locale"
+    idx = np.where(kc_list == kc_to_remove)[0]
+    if len(idx) > 0:
+        idx = idx[0]
+        print(f"Suppression du KC [{idx}]: {kc_to_remove}")
+        q_matrix = np.delete(q_matrix, idx, axis=1)
+        kc_list = np.delete(kc_list, idx)
+        mask = df["KC"] != kc_to_remove
+        df = df[mask].reset_index(drop=True)
+        print(f"  Q-matrix: {q_matrix.shape}, kc_list: {len(kc_list)}, df: {len(df)}")
+    
+    return df, q_matrix, kc_list
+
+def test1():
     #"Theta_tres(0.4)","Theta_tres_multiKC(0.4)","Mu_back_4","RandomH",
     df, q_matrix, kc_list = load_Model()
     kc_name_to_idx = {kc_list[i]: i for i in range(len(kc_list))}
     n_runs=1
     seeds=list(range(42,42+n_runs))
-    n_ks=min(40, q_matrix.shape[1])
-    time_list=[0.45]
+    n_ks=min(25, q_matrix.shape[1])
+    time_list=[0.15]
     
     #time_review=1 #en heures
     exos=list(range(q_matrix.shape[0]))
@@ -453,8 +506,16 @@ if __name__ == "__main__":
                         heuristic=heuristic, history=False,
                         weeks_to_simulate=16, T_max_review_min=60*time_review, t0=0, kc_list=kcs)
                 weekly_results,weekly_mastery, retention_pmr, global_pmr,pmr_history= simu_das3h.simulate(params,verbose_student=students[5])
-                """if name=="ZPD" or name=="Révision ciblée" :
-                    plot_timeline(simu_das3h.detailed_log, kc_idx_to_name=None, heuristic_name=name,params=params,student=students[5],items_per_kc=items_per_kc)"""
+                if name == "ZPD" or name == "Révision ciblée":
+                        plot_timeline(
+                            simu_das3h.detailed_log,
+                            kc_idx_to_name={i: kc_list[i] for i in range(len(kc_list))},
+                            heuristic_name=name,
+                            params=params,
+                            student=students[5],
+                            items_per_kc=simu_das3h.items_per_kc,
+                            curriculum_kcs=set(kcs),  # les KCs du curriculum
+                        )
                 all_runs_retention[name].append(retention_pmr)
                 all_runs_global[name].append(global_pmr)
                 all_runs_simulation_results[name] = simu_das3h.simulation_results
@@ -473,11 +534,163 @@ if __name__ == "__main__":
                 all_shannon[name] = (weeks, means, stds)
 
         plot_all_diversity_avg(all_gini, all_shannon)
-               
-
         plot_aggregated(aggregated_global, "PMR moyen", 
                     f"PMR global — Apprentissage + Rétention \n Protocle : {time_review*60} min/week \n N° KCs = {n_ks} ", 
                     n_runs=n_runs, xlabel="Weeks")
 
+def _pick_item_for_kc(kc, qmatrix, rng):
+    items = np.where(qmatrix[:, kc] == 1)[0]
+    if len(items) == 0:
+        return None
+    return int(rng.choice(items))
 
+
+def _finalize_history(rows):
+    if not rows:
+        return pd.DataFrame(columns=["user_id", "item_id", "KC", "timestamp",
+                                      "correct", "inter_id"])
+    df = pd.DataFrame(rows)
+    df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df["inter_id"] = np.arange(len(df))
+    return df
+
+def CreateHistoryStudent_Scenario(students, qmatrix, profile_per_kc,n_days=10, t0=0, seed=42):
+    rng = np.random.default_rng(seed)
+    total_seconds = n_days * 24 * 3600
+    rows = []
+    for std in students:
+        for kc, profile_name in profile_per_kc.items():
+            if profile_name not in PROFILES:
+                raise ValueError(f"Profil inconnu '{profile_name}' pour KC {kc}. "
+                                 f"Choix : {list(PROFILES.keys())}")
+            prof = PROFILES[profile_name]
+            n_inter = prof["n"]
+            if n_inter == 0:
+                continue  
+            t_start = t0 + prof["window"][0] * total_seconds
+            t_end   = t0 + prof["window"][1] * total_seconds
+            timestamps = np.sort(rng.uniform(t_start, t_end, size=n_inter))
+            for ts in timestamps:
+                item = _pick_item_for_kc(kc, qmatrix, rng)
+                if item is None:
+                    continue
+                correct = int(rng.random() < prof["success_rate"])
+                rows.append({
+                    "user_id": std,
+                    "item_id": item,
+                    "KC": int(kc),
+                    "timestamp": float(ts),
+                    "correct": correct,
+                    "inter_id": -1, 
+                })
+    return _finalize_history(rows)
+def generate_qmatrix_controlled(n_kcs, items_per_kc=3):
+    n_items = n_kcs * items_per_kc
+    qmat = np.zeros((n_items, n_kcs), dtype=int)
+    for kc in range(n_kcs):
+        for k in range(items_per_kc):
+            item_idx = kc * items_per_kc + k
+            qmat[item_idx, kc] = 1
+
+    return qmat
+def test2():
+    profile = {
+    0: "maitrise",
+    1: "maitrise",
+    2: "en_cours",
+    3: "en_cours",
+    4: "ancien_oublie",
+    5: "ancien_oublie",
+    6: "jamais_vu",
+    7: "jamais_vu",
+    }
+    qmat=generate_qmatrix_controlled(n_kcs=8,items_per_kc=2)
+    df_hist = CreateHistoryStudent_Scenario(
+        students=[101, 102], qmatrix=qmat,
+        profile_per_kc=profile, n_days=10, t0=0, seed=42,
+    )
+    
+    params = {
+                "alpha_s": {s: np.random.normal(0, 1) for s in [101,102]},
+                "delta_j": {e: np.random.normal(1, 1) for e in list(range(qmat.shape[0]))},
+                "beta_j":  {kc: np.random.normal(-1, 1) for kc in list(range(qmat.shape[1]))},
+                "theta_wins":     {kc: [np.random.uniform(0, 2) for _ in range(5)] for kc in list(range(qmat.shape[0]))},
+                "theta_attempts": {kc: [np.random.uniform(0, 2) for _ in range(5)] for kc in list(range(qmat.shape[0]))},
+            }
+    heuristics = {
+                "ZPD": ZPD_KCS.ZPD_KCS(pathfilejs=FILE_PATH_JSON, kclist=list(range(qmat.shape[0])), z1=0.2, z2=0.7),
+                "Révision à espacement fixe": MuBackH.MuBackH(mu=4, kc_list=list(range(qmat.shape[0])), Graph=None),
+                "Révision ciblée": Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4),
+                #"Révision ciblée multiKcs": Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4, multi_kc=True),
+                "Révision aléatoire": RandomH.RandomH(kc_list=list(range(qmat.shape[0]))),
+                "Sans révision": Noreview.Noreview(),
+                
+            }
+    t_eval = 10 * 24 * 3600
+    items_per_kc = {}
+    for kc in range(qmat.shape[1]):
+        items = np.where(qmat[:, kc] == 1)[0]
+        if len(items) > 0:
+            items_per_kc[kc] = items
+
+    dfkcs=[]
+    for name,heuris in heuristics.items():
+        for std in [101,102]:
+            queues_init, kcs_init = history_to_queues(df_hist, student=std)
+            last_review_init = history_to_last_review(df_hist, student=std)
+            item, kcs_chosen = heuris.HeuristicTochooseItemfromQ(
+                        week=10*24//7,  # semaine courante (≈ 1 ici)
+                        kcs_introduced=kcs_init,
+                        q_mat_=qmat,
+                        student=101,
+                        queues=queues_init,
+                        params=params,
+                        t_current=t_eval,
+                        items_per_kc=items_per_kc,
+                        dictPkcs=None,
+                        kc_idx_to_name=None,
+                        kc_name_to_idx=None,
+                    )
+
+
+
+
+    return df_hist,queues_init,last_review_init
+from utils.this_queue import OurQueue
+
+
+def history_to_queues(history_df, student):
+    df_std = history_df[history_df["user_id"] == student].sort_values("timestamp")
+    queues = {}
+    kcs_introduced = []
+    for _, row in df_std.iterrows():
+        kc = int(row["KC"])
+        ts = float(row["timestamp"])
+        correct = int(row["correct"])
+        if kc not in queues:
+            queues[kc] = {"wins": OurQueue(), "attempts": OurQueue()}
+            kcs_introduced.append(kc)
+        queues[kc]["attempts"].push(ts)
+        if correct == 1:
+            queues[kc]["wins"].push(ts)
+    return queues, kcs_introduced
+def history_to_last_review(history_df, student, seconds_per_week=7*24*3600):
+    df_std = history_df[history_df["user_id"] == student]
+    last_review = {}
+    for kc in df_std["KC"].unique():
+        df_kc = df_std[df_std["KC"] == kc]
+        last_ts = df_kc["timestamp"].max()
+        last_review[int(kc)] = int(last_ts // seconds_per_week)
+    return last_review
+
+
+
+if __name__ == "__main__":
+
+    time_execute=2
+    if time_execute==1: test1()
+    else : 
+        df_hist,queues_init,last_review_init=test2()
+        print(df_hist)
+        print("!!!!!!!!!!!!!!!Done!!!!!!!!!!!!!!!!!")
 print("Simulation completed for all heuristics.")

@@ -12,6 +12,7 @@ from collections import defaultdict
 class DAS3HModel:
 
     def __init__(self, C=1.0):
+        self.name="Das3h"+ " parameters: "+str(C)
         self.C = C
         self.model = None
         self.scaler = None

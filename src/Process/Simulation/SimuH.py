@@ -5,7 +5,9 @@ import pandas as pd
 import numpy as np
 class SimulationH():
     def __init__(self,students=None,exos=None,kcs=None,data:pd.DataFrame=None,model:das3H.DAS3HModel=None,qmat=None,heuristic=None,history:bool=False,
-                 weeks_to_simulate=16,T_max_review_min=60,t0=0,kc_list=None):
+                 weeks_to_simulate=16,T_max_review_min=60,t0=0,kc_list=None,index_simu=0):
+        
+        self.name="Simulation _index "+ str(index_simu) + "-- Info :-- \n"+  "Time_review : "+str(T_max_review_min) +"\n"+"weeks : "+ str(weeks_to_simulate)+ "\n"+ "Model : " 
         self.students=students
         self.exos=exos
         self.kcs=kcs
@@ -70,14 +72,12 @@ class SimulationH():
         
         while t_current < t_end:
             _,pmr_kc=self.compute_pmr_all_kcs(student=student,params=params,queues=queues,t_eval=t_current)
-
             item, kcs = self.heuristic.HeuristicTochooseItemfromQ(
                         week=week_num, kcs_introduced=kcs_introduced,q_mat_=self.qmat,student=student,
                         queues=queues,params=params,t_current=t_current, items_per_kc=self.items_per_kc,dictPkcs=pmr_kc,kc_idx_to_name=self.kc_idx_to_name,kc_name_to_idx=self.kc_name_to_idx
                     )
             if item is None:
                 break
-
             alpha_s = params["alpha_s"][student]
             delta_j = params["delta_j"][item]
             beta_sum = sum(params["beta_j"].get(kc, 0) for kc in kcs)
@@ -91,88 +91,17 @@ class SimulationH():
                 for i in range(5):
                     h_wins += params["theta_wins"][kc][i] * np.log(1 + counters_w[i])
                     h_attempts += params["theta_attempts"][kc][i] * np.log(1 + counters_a[i])
-
             logit = alpha_s - delta_j + beta_sum + h_wins + h_attempts
             p_correct = self.sigmoid(logit)
             correct = int(np.random.random() < p_correct)
-            """if verbose:
-                _, pmr_after = self.compute_pmr_all_kcs(student, params, queues, t_current)
-                for kc in kcs:
-                    if kc not in pmr_kc:
-                        items = self.items_per_kc.get(kc, [])
-                        if len(items)>0:
-                            alpha_s = params["alpha_s"][student]
-                            delta_j = params["delta_j"][items[0]]
-                            beta = params["beta_j"].get(kc, 0)
-                            h = 0.0
-                            if kc in queues:
-                                cw = queues[kc]["wins"].get_counters(t_current)
-                                ca = queues[kc]["attempts"].get_counters(t_current)
-                                for i in range(5):
-                                    h += params["theta_wins"].get(kc, [0]*5)[i] * np.log(1 + cw[i])
-                                    h += params["theta_attempts"].get(kc, [0]*5)[i] * np.log(1 + ca[i])
-                            logit = alpha_s - delta_j + beta + h
-                            pmr_kc[kc] = self.sigmoid(logit)
-                            pmr_after[kc] = pmr_kc[kc]
-                
-                self.detailed_log.append({
-                    "week": week_num,
-                    "iteration": len([l for l in self.detailed_log if l["week"] == week_num]),
-                    "pmr_before": dict(pmr_kc),
-                    "chosen_kc": kcs[0],
-                    "p_correct": float(p_correct),
-                    "correct": int(correct),
-                    "pmr_after": dict(pmr_after),
-                    "queues":queues,
-                    "t_current":t_current,
-                })"""
-            # Dans Loopweek_csTime, section verbose
-            if verbose:
-                _, pmr_after = self.compute_pmr_all_kcs(student, params, queues, t_current)
-                
-                for kc in kcs:
-                    if kc not in pmr_kc:
-                        items = self.items_per_kc.get(kc, [])
-                        if len(items) > 0:
-                            alpha_s = params["alpha_s"][student]
-                            delta_j = params["delta_j"][items[0]]
-                            beta = params["beta_j"].get(kc, 0)
-                            h = 0.0
-                            if kc in queues:
-                                cw = queues[kc]["wins"].get_counters(t_current)
-                                ca = queues[kc]["attempts"].get_counters(t_current)
-                                for ii in range(5):
-                                    h += params["theta_wins"].get(kc, [0]*5)[ii] * np.log(1 + cw[ii])
-                                    h += params["theta_attempts"].get(kc, [0]*5)[ii] * np.log(1 + ca[ii])
-                            logit = alpha_s - delta_j + beta + h
-                            pmr_kc[kc] = self.sigmoid(logit)
-                            pmr_after[kc] = pmr_kc[kc]
-                
-                # Stocker les compteurs figés, pas la référence aux queues
-                counters_snapshot = {}
-                for kc_q, q in queues.items():
-                    counters_snapshot[kc_q] = {
-                        "wins": list(q["wins"].get_counters(t_current)),
-                        "attempts": list(q["attempts"].get_counters(t_current)),
-                    }
-                
-                self.detailed_log.append({
-                    "week": week_num,
-                    "iteration": len([l for l in self.detailed_log if l["week"] == week_num]),
-                    "pmr_before": dict(pmr_kc),
-                    "chosen_kc": kcs[0],
-                    "p_correct": float(p_correct),
-                    "correct": int(correct),
-                    "pmr_after": dict(pmr_after),
-                    "counters": counters_snapshot,
-                    "t_current": t_current,
-                })
+            
             for kc in kcs:
                 queues[kc]["attempts"].push(t_current)
                 if correct:
                     queues[kc]["wins"].push(t_current)
                 if hasattr(self.heuristic, 'update'):
                     self.heuristic.update(kc, week_num)
+            
             exo_duration = np.random.randint(2, 8) * 60
             t_current += exo_duration
             self.simulation_results.append({
@@ -181,10 +110,23 @@ class SimulationH():
                 "p_correct": p_correct, "correct": correct,
                 "timestamp": t_current,
             })
-    
-
-   
-    
+            if verbose:
+                _, pmr_after = self.compute_pmr_all_kcs(student, params, queues, t_current)
+                extra_kcs = [kc for kc in kcs if kc not in pmr_after]
+                if extra_kcs:
+                    _, pmr_extra = self.compute_pmr_chosenKC(student, params, queues, t_current, extra_kcs)
+                    pmr_after.update(pmr_extra)
+                self.detailed_log.append({
+                    "week": week_num,
+                    "iteration": len([l for l in self.detailed_log if l["week"] == week_num]),
+                    "item": item,
+                    "kcs_reviewed": list(kcs),
+                    "kcs_are_children": [kc for kc in kcs if kc not in self.kcs],  # marqueur
+                    "correct": correct,
+                    "p_correct": p_correct,
+                    "pmr_after": dict(pmr_after),
+                })
+            
     """def build_curriculum(self, kc_list, n_weeks=16):
         kc_list = list(kc_list)
         kcs_per_week = max(1, len(kc_list) // n_weeks)
@@ -220,16 +162,9 @@ class SimulationH():
                     if kc not in queues:
                         queues[kc] = {"wins": OurQueue(), "attempts": OurQueue()}
                     queues[kc]["attempts"].push(week * 7 * 24 * 3600)
-        
                 kcs_introduced.extend(new_kcs)
                 is_verbose = (student == verbose_student)
-                """if is_verbose:
-                    print(f"\n{'='*60}")
-                    print(f"Semaine {week} | KCs introduits: {kcs_introduced}")
-                    print(f"{'='*60}")"""
-
                 self.Loopweek_csTime(student, week, params, kcs_introduced, queues, t_start, verbose=is_verbose)
-                
                 pmr_all, pmr_kcs=self.compute_pmr_all_kcs(student, params, queues, t_start)
                 if student not in pmr_history:
                     pmr_history[student] = {}
@@ -406,3 +341,37 @@ class SimulationH():
             pmr_kcs[kc]=p_
         #print(f"Student {student}, PMR all KCs: {np.mean(pmr_list):.4f}")
         return np.mean(pmr_list),pmr_kcs
+    def compute_pmr_chosenKC(self, student, params, queues, t_eval,kcs):
+        
+        pmr_list = []
+        pmr_kcs={}
+        alpha_s = params["alpha_s"][student]
+        for kc in kcs:
+            beta = params["beta_j"].get(kc, 0)
+            items = self.items_per_kc.get(kc, [])
+            if len(items) == 0:
+                delta_j=-1
+            else:
+                item=items[0]
+                delta_j = params["delta_j"][item]
+            if kc in queues:
+                cw = queues[kc]["wins"].get_counters(t_eval)
+                ca = queues[kc]["attempts"].get_counters(t_eval)
+            else:
+                cw = [0] * 5
+                ca = [0] * 5
+            h = sum(
+                params["theta_wins"].get(kc, [0]*5)[i] * np.log(1 + cw[i])
+                + params["theta_attempts"].get(kc, [0]*5)[i] * np.log(1 + ca[i])
+                for i in range(5)
+            )
+            # Choffin utilise delta=-1 fixe pour le PMR
+            logit = alpha_s - delta_j + beta + h
+            #print(f"Student {student}, KC {kc},cw: {cw}, ca: {ca}, logit: {logit:.2f}, PMR: {self.sigmoid(logit):.4f}")
+            p_=self.sigmoid(logit)
+            pmr_list.append(p_)
+            pmr_kcs[kc]=p_
+        #print(f"Student {student}, PMR all KCs: {np.mean(pmr_list):.4f}")
+        return np.mean(pmr_list),pmr_kcs
+    
+    

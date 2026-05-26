@@ -7,6 +7,7 @@ import re
 class StudentDATA:
     def __init__(self, file:str="algebra05/data.txt",seed:int=42):
         self.pathfile = file #if it csv 
+        self.name=file.split("/")[0]
         self.data = None
         self.users = None
         self.items = None

@@ -121,6 +121,7 @@ class ZPD_KCS():
     def HeuristicTochooseItemfromQ(self, week=None, kcs_introduced=None, q_mat_=None,
                                 student=None, queues=None, params=None,
                                 t_current=None, items_per_kc=None, **kwargs):
+        
         kcs = self.ChooseKC(t_current, student, queues, params, items_per_kc, kcs_introduced)
         if not kcs:
             return None, []

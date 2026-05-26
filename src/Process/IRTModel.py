@@ -4,6 +4,8 @@ import pandas as pd
 
 class IRTMODEL: 
     def __init__(self,DataStudent:SD.StudentDATA=None):
+
+        self.name="Irt"
         self.data=DataStudent.data.copy()
         #Factorisation 
         self.data["student_id"], self.student_categories = pd.factorize(self.data["user_id"])

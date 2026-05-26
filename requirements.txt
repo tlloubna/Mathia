@@ -10,3 +10,5 @@ matplotlib
 seaborn 
 networkx
 plotly
+PyQt6
+pyqtgrap

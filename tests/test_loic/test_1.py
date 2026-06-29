@@ -1,172 +1,522 @@
-
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QWidget, QHBoxLayout, QVBoxLayout, QStackedWidget, QMenu, QToolBar, QFrame
-from PyQt6.QtGui import QIcon, QFont, QPixmap, QEnterEvent, QAction
-from PyQt6.QtCore import QTimer, QPoint
+from PyQt6.QtWidgets import (
+    QApplication, QLabel, QHBoxLayout, QVBoxLayout,
+    QMainWindow, QWidget, QTabWidget, QComboBox, QFileDialog, QFrame, QSplitter
+)
+from PyQt6.QtGui import QIcon, QPixmap, QAction
+from PyQt6.QtCore import Qt
+import datetime
+import logging
+import os
 import sys
-
-"""
-QLabel :  Creer les  labels 
-QHBoxLayout : pour la mise en oage horizontale 
-"""
-
-
-
-class Window1(QWidget):
-    def __init__(self,widget):
-        super().__init__()
-        self.widget = widget
-
-        Title = QLabel("KnowLedgeTracer")
-        Title.setFont(QFont("Lexend", 32, QFont.Weight.Bold))
-        Title.setStyleSheet("color: black; qproperty-alignment: 'AlignCenter';")
-
-        logo_pixmap = QPixmap("/home/neuro/Documents/Loic/qt.png")
-        logo = QLabel(self)
-        logo.setPixmap(logo_pixmap)
-        logo.setFixedSize(70, 70) 
-        logo.setScaledContents(True) 
-
-        layout_T = QHBoxLayout()
-        layout_T.addStretch()
-        layout_T.addSpacing(10)        
-        layout_T.addWidget(Title)  
-        layout_T.addWidget(logo)
-        layout_T.addStretch()  
-
-        btn = QPushButton("Enseignant\nProf en Poche", self)
-        btn.setFont(QFont("Times New Roman", 12, QFont.Weight.Bold))
-        btn.setFixedHeight(200)
-        btn.setFixedWidth(130)
-        btn.setStyleSheet('background-color:grey')
-        btn.clicked.connect(lambda: self.widget.setCurrentIndex(1))
-
-        btn0 = QPushButton("Chercheur\nETIS", self)
-        btn0.setFont(QFont("Times New Roman", 12, QFont.Weight.Bold))
-        btn0.setFixedHeight(200)
-        btn0.setFixedWidth(130)
-        btn0.setStyleSheet('background-color:grey')
-        btn0.clicked.connect(lambda: self.widget.setCurrentIndex(2))
-
-        layout_H = QHBoxLayout()
-        layout_H.addStretch()
-        layout_H.addWidget(btn)
-        layout_H.addSpacing(170) 
-        layout_H.addWidget(btn0)
-        layout_H.addStretch()
-
-        layout_V = QVBoxLayout()
-        layout_V.addStretch()    
-        layout_V.addLayout(layout_H)
-        layout_V.addLayout(layout_T)
-        layout_V.addStretch()    
-
-        self.setLayout(layout_V)
-
-class PageChercheur(QWidget):
-    def __init__(self, widget):
-        super().__init__()
-        self.widget = widget
-
-        toolbar_frame = QFrame(self)
-        toolbar_frame.setStyleSheet("background-color: #e0e0e0; border-bottom: 1px solid #b0b0b0;")
-        toolbar_frame.setFixedHeight(40) # Hauteur fixe pour faire comme une vraie toolbar
-        
-        # Le layout interne de notre barre d'outils
-        toolbar_layout = QHBoxLayout(toolbar_frame)
-        toolbar_layout.setContentsMargins(10, 0, 10, 0) # Petites marges internes
-
-        # On remplace la QAction par un vrai QPushButton textuel
-        toolbar_button = QPushButton("Your bon", self)
-        toolbar_button.setStyleSheet("background-color: transparent; border: none; font-weight: bold;")
-        toolbar_button.clicked.connect(self.toolbar_button_clicked)
-        
-        # On ajoute le bouton à notre barre et on pousse vers la gauche
-        toolbar_layout.addWidget(toolbar_button)
-        toolbar_layout.addStretch()
-
-        Title = QLabel("Chercheur(euse)", self)
-        Title.setFont(QFont("Lexend", 32, QFont.Weight.Bold))
-        Title.setStyleSheet("color: black;")
-
-        btn = QPushButton("Accueil", self)
-        btn.setFont(QFont("Times New Roman", 12, QFont.Weight.Bold))
-        btn.setFixedHeight(50)
-        btn.setFixedWidth(200)
-        btn.setStyleSheet('background-color:grey')
-        btn.clicked.connect(lambda: self.widget.setCurrentIndex(0))
-
-        layout_C2H = QHBoxLayout()
-        layout_C2H.addWidget(btn)
-        layout_C2H.addStretch()
-        layout_C2H.addSpacing(150)
-        layout_C2H.addWidget(Title)
-        layout_C2H.addSpacing(400)
-        layout_C2H.addStretch()
-
-        layout_C2V = QVBoxLayout()
-        layout_C2V.addSpacing(400)
-        layout_C2V.addLayout(layout_C2H)
-        layout_C2V.addStretch()
-
-        self.setLayout(layout_C2V)
-
-    def toolbar_button_clicked(self, s):
-        print("click", s)
-
-class PageProf(QWidget):
-    def __init__(self, widget):
-        super().__init__()
-        self.widget = widget
-
-        Title = QLabel("Prof de Poche", self)
-        Title.setFont(QFont("Lexend", 32, QFont.Weight.Bold))
-        Title.setStyleSheet("color: black;")
-
-        btn = QPushButton("Accueil", self)
-        btn.setFont(QFont("Times New Roman", 12, QFont.Weight.Bold))
-        btn.setFixedHeight(50)
-        btn.setFixedWidth(200)
-        btn.setStyleSheet('background-color:grey')
-        btn.clicked.connect(lambda: self.widget.setCurrentIndex(0))
-
-        layout_P2H = QHBoxLayout()
-        layout_P2H.addWidget(btn)
-        layout_P2H.addStretch()
-        layout_P2H.addSpacing(150)
-        layout_P2H.addWidget(Title)
-        layout_P2H.addSpacing(400)
-        layout_P2H.addStretch()
-
-        layout_P2V = QVBoxLayout()
-        layout_P2V.addLayout(layout_P2H)
-        layout_P2V.addStretch()
-
-        self.setLayout(layout_P2V)
-
-
-class Site(QWidget):
+import json
+import csv
+ 
+import matplotlib
+matplotlib.use('QtAgg')
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
+ 
+logger = logging.getLogger(__name__)
+ 
+ 
+class KnwoledgeTracer(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.style = "color: white; background-color: #031224;"
+        # Dictionnaire qui stocke les meta-donnees ET les interactions de chaque fichier.
+        # Cle = nom du fichier.
+        # Valeur = dict : {type, eleves, exercices, competences, interactions}
+        #   interactions = liste de dicts {"eleve":..., "kc":..., "reussite": 0 ou 1}
+        # IMPORTANT : a creer AVANT CreateGui().
+        self.donnees_fichiers = {}
+        self.apply_config()
+        self.CreateGui()
+        self.CreateMenubar()
+ 
+    def apply_config(self):
+        print("config done")
+ 
+    def CreateGui(self):
+        logging.info(self.__class__.__name__ + ':Create Gui')
+        self.setWindowTitle("KnowledgeTracer")
+        self.resize(2560, 1440)
+        self.CreateVlayout()
+ 
+    def CreateMenubar(self):
+        self.menubar = self.menuBar()
+        file_menu = self.menubar.addMenu("File")
+        process_menu = self.menubar.addMenu("Process")
+        analyse_menu = self.menubar.addMenu("Analyse")
+        self.menubar.setStyleSheet("color: white; background-color: #021C36;border-radius: 6px;border: 1px solid #353E78;")
+ 
+        File_import = QAction("Importer un fichier", self)
+        File_import.triggered.connect(self.ouvrir_fichier)
 
-        self.setWindowTitle("KnowLedgeTracer")
-        self.setWindowIcon(QIcon("/home/neuro/Documents/Inertface_learning/qt.png"))
-        self.resize(1200, 700)
-        self.setStyleSheet('background-color:white')
+        File_export = QAction("Exporter un fichier", self) 
+        File_export.triggered.connect(self.export_fichier)
 
-        self.widget = QStackedWidget()
-        self.Window1 = Window1(self.widget)
-        self.p_prof = PageProf(self.widget)
-        self.p_chr = PageChercheur(self.widget)
+        file_menu.addAction(File_import)
+        file_menu.addAction(File_export)
+ 
+    def CreateVlayout(self):
+ 
+        main_layout = QHBoxLayout()
+        central = QWidget()
+        central.setStyleSheet("background-color: #031224 ")
+        self.left_panel = QWidget()
+        self.left_panel.setStyleSheet("color: black; background-color: #031224; border-radius: 6px;border: 1px solid #353E78")
+        self.left_layout = QVBoxLayout()
+        self.rec = QFrame()
+        self.rec.setStyleSheet("color: black; background-color: #021C36;border: 1px solid #353E78;border-radius: 6px")
+        in_rec = QVBoxLayout(self.rec)
+        in_rec.setSpacing(10)
+        in_rec.setContentsMargins(10, 10, 10, 10)
+        self.combobox()
+        self.combobox.setStyleSheet("color: white; background-color: #486096; border: 1px solid #353E78;border-radius: 6px")
+ 
+        self.info = QLabel("            Information dataset selectionne")
+        self.info_type = QLabel("\nType : ")
+        self.info_nbeleves = QLabel("\nNombres d'eleves : ")
+        self.info_nbexercise = QLabel("\nNombres d'exercices : ")
+        self.info_nbcompetance = QLabel("\nNombres de competance : ")
+ 
+        self.sep = QSplitter(Qt.Orientation.Vertical)
+ 
+        self.sep.setStyleSheet("""
+        QSplitter::handle {
+        background-color: #595858;
+        height: 2px; /* Ligne fine de 2 pixels */
+                        }
+            QLabel {
+        color: white;
+        margin: 0px;
+        padding: 0px;
+        line-height: 100%;
+        }
+            """)
+        self.sep.addWidget(self.info)
+        self.sep.addWidget(self.info_type)
+        self.sep.addWidget(self.info_nbeleves)
+        self.sep.addWidget(self.info_nbexercise)
+        self.sep.addWidget(self.info_nbcompetance)
+ 
+        in_rec.addWidget(self.combobox)
+        in_rec.addSpacing(20)
+        in_rec.addWidget(self.sep)
+        in_rec.addSpacing(30)
+        in_rec.addStretch()
 
-        self.widget.addWidget(self.Window1)  
-        self.widget.addWidget(self.p_prof)       
-        self.widget.addWidget(self.p_chr) 
+        self.left_layout.addWidget(self.rec)
+        self.left_layout.addStretch()
+        self.logo = QLabel()
+        self.logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.logo.setStyleSheet("""
+            border: none; 
+            background: transparent; 
+            background-color: transparent;
+        """)
 
-        layout_Prcp = QVBoxLayout()
-        layout_Prcp.addWidget(self.widget)
-        self.setLayout(layout_Prcp)
-        
-app = QApplication([])
-window = Site()
-window.show()
-sys.exit(app.exec())
+        image = "/home/neuro/Documents/Loic/KnowLedgeTracerLogo2.png"
+        pixmap = QPixmap(image) 
+        pixmap_redimensionne = pixmap.scaledToWidth(300, Qt.TransformationMode.SmoothTransformation)
+        self.logo.setPixmap(pixmap_redimensionne)
+
+ 
+        # 3. On l'ajoute tout en bas du panneau de gauche
+        self.left_layout.addWidget(self.logo)
+        self.left_layout.addSpacing(10)
+        self.left_panel.setLayout(self.left_layout)
+        self.left_layout.addStretch()
+ 
+        # ---------- ONGLET GRAPH ----------
+        self.tabs = QTabWidget()
+ 
+        # On construit un widget "Graph" qui contient :
+        #   - une barre du haut avec 2 ComboBox (eleve + KC)
+        #   - la zone matplotlib en dessous
+        graph_widget = QWidget()
+        graph_layout = QVBoxLayout(graph_widget)
+ 
+        # Barre du haut avec les deux selecteurs
+        barre_selecteurs = QHBoxLayout()
+ 
+        barre_selecteurs.addWidget(QLabel("Eleve :"))
+        self.combo_eleve = QComboBox()
+        self.combo_eleve.setFixedWidth(350)
+        # Quand on change l'eleve -> on retrace le graphe
+        self.combo_eleve.currentTextChanged.connect(self.tracer_courbe_apprentissage)
+        barre_selecteurs.addWidget(self.combo_eleve)
+ 
+        barre_selecteurs.addWidget(QLabel("KC :"))
+        self.combo_kc = QComboBox()
+        self.combo_kc.setFixedWidth(600)
+        # Quand on change la KC -> on retrace le graphe
+        self.combo_kc.currentTextChanged.connect(self.tracer_courbe_apprentissage)
+        barre_selecteurs.addWidget(self.combo_kc)
+ 
+        barre_selecteurs.addStretch()  # pousse les selecteurs vers la gauche
+ 
+        graph_layout.addLayout(barre_selecteurs)
+ 
+        # Zone matplotlib
+        self.figure = Figure()
+        self.canvas = FigureCanvasQTAgg(self.figure)
+        graph_layout.addWidget(self.canvas)
+ 
+        self.tabs.addTab(graph_widget, "Graph")
+ 
+        # ---------- AUTRES ONGLETS ----------
+        self.data_tab = QLabel("Display data : head, ....")
+        self.tabs.addTab(self.data_tab, "Data")
+ 
+        self.model_tab = QLabel("Results: DAS3H / IRT / ...")
+        self.tabs.addTab(self.model_tab, "Models")
+ 
+        self.Heuristic_tab = QLabel("Heuristics / Simulation")
+        self.tabs.addTab(self.Heuristic_tab, "Heuristics")
+ 
+        main_layout.addWidget(self.left_panel, stretch=1)
+        main_layout.addWidget(self.tabs, stretch=4)
+ 
+        central.setLayout(main_layout)
+        self.setCentralWidget(central)
+ 
+    def CreateToolBarDataSet(self):
+        pass
+ 
+    def CreateGraph(self):
+        pass
+ 
+    def Display_ManageData(self):
+        pass
+ 
+    def DisplayresultsModel(self):
+        pass
+ 
+    def ManageHeuristics(self):
+        pass
+ 
+    def SimulationHeuristics(self):
+        pass
+ 
+    def combobox(self):
+        self.combobox = QComboBox()
+        # Quand on change de fichier -> on met a jour infos ET selecteurs eleve/KC.
+        self.combobox.currentTextChanged.connect(self.changer_dataset)
+        self.left_layout.addSpacing(20)
+        self.left_layout.addWidget(self.combobox)
+ 
+    # --------- AFFICHAGE / CHANGEMENT DE DATASET ---------
+ 
+    def afficher_infos(self, nom_fichier):
+        """Ecrit dans les labels les infos du fichier demande."""
+        infos = self.donnees_fichiers.get(nom_fichier, {})
+        self.info_type.setText("\nType : " + infos.get("type", ""))
+        self.info_nbeleves.setText(f"\nNombres d'eleves : {infos.get('eleves', '')}")
+        self.info_nbexercise.setText(f"\nNombres d'exercices : {infos.get('exercices', '')}")
+        self.info_nbcompetance.setText(f"\nNombres de competences : {infos.get('competences', '')}")
+ 
+    def changer_dataset(self, nom_fichier):
+        """Appelee quand la combobox des fichiers change."""
+        self.afficher_infos(nom_fichier)
+        self.remplir_selecteurs(nom_fichier)
+ 
+    def remplir_selecteurs(self, nom_fichier):
+        """Remplit les ComboBox eleve et KC a partir des interactions du fichier."""
+        infos = self.donnees_fichiers.get(nom_fichier, {})
+        interactions = infos.get("interactions", [])
+ 
+        # On recupere la liste triee des eleves et des KC presents.
+        eleves = sorted({inter["eleve"] for inter in interactions})
+        kcs = sorted({inter["kc"] for inter in interactions})
+ 
+        # On bloque temporairement les signaux pour eviter de tracer
+        # plein de fois pendant qu'on remplit les listes.
+        self.combo_eleve.blockSignals(True)
+        self.combo_kc.blockSignals(True)
+ 
+        self.combo_eleve.clear()
+        self.combo_eleve.addItems(eleves)
+        self.combo_kc.clear()
+        self.combo_kc.addItems(kcs)
+ 
+        self.combo_eleve.blockSignals(False)
+        self.combo_kc.blockSignals(False)
+ 
+        # On trace une fois maintenant que tout est rempli.
+        self.tracer_courbe_apprentissage()
+ 
+    # --------- TRACE DU GRAPHE ---------
+ 
+    def tracer_courbe_apprentissage(self):
+        """Trace P(succes) au fil des tentatives pour l'eleve + KC selectionnes."""
+        nom_fichier = self.combobox.currentText()
+        eleve = self.combo_eleve.currentText()
+        kc = self.combo_kc.currentText()
+ 
+        # On vide la figure avant de redessiner.
+        self.figure.clear()
+        ax = self.figure.add_subplot(111)
+ 
+        infos = self.donnees_fichiers.get(nom_fichier, {})
+        interactions = infos.get("interactions", [])
+ 
+        # On filtre : on garde les interactions de cet eleve sur cette KC,
+        # dans l'ordre ou elles ont ete lues (= ordre chronologique du fichier).
+        suite = [inter["reussite"] for inter in interactions
+                 if inter["eleve"] == eleve and inter["kc"] == kc]
+ 
+        if not suite:
+            ax.set_title("Aucune donnee pour cette selection")
+            self.canvas.draw()
+            return
+ 
+        # Moyenne mobile cumulee : a chaque tentative, P(succes) = moyenne
+        # des reussites depuis le debut. C'est ce qui donne la courbe qui monte.
+        x = list(range(1, len(suite) + 1))
+        y = []
+        total = 0
+        for i, r in enumerate(suite):
+            total += r
+            y.append(total / (i + 1))
+ 
+        ax.plot(x, y, marker='o', color='#4f8ef7')
+        ax.set_title(f"Courbe d'apprentissage - {eleve} / {kc}")
+        ax.set_xlabel("Numero de tentative")
+        ax.set_ylabel("P(succes) cumulee")
+        ax.set_ylim(0, 1.05)
+        ax.grid(True, alpha=0.3)
+ 
+        self.canvas.draw()
+ 
+    # --------- IMPORT DE FICHIER ---------
+ 
+    def ouvrir_fichier(self):
+        filtre = "*.json *.txt *.csv"
+        chemin, _ = QFileDialog.getOpenFileName(self, "fichier", "", filtre)
+ 
+        if chemin:
+            extension = os.path.splitext(chemin)[1].lower()
+            name = chemin.split("/")[-1]
+ 
+            if extension == '.json':
+                self.charger_json(chemin, name)
+            elif extension in ['.csv', '.txt']:
+                self.charger_texte_csv(chemin, name)
+ 
+            self.combobox.addItem(name)
+            self.combobox.setCurrentText(name)
+ 
+    def charger_json(self, chemin, nom):
+        try:
+            with open(chemin, 'r', encoding='utf-8') as f:
+                donnees = json.load(f)
+ 
+            eleves = set()
+            exercices = set()
+            competences = set()
+            interactions = []  # NOUVEAU : la liste des interactions
+ 
+            statements = donnees if isinstance(donnees, list) else [donnees]
+ 
+            for item in statements:
+                st = item.get("statement", item)
+ 
+                # Eleve
+                actor = st.get("actor", {})
+                agent_id = item.get("agents", [None])[0] if "agents" in item else actor.get("mbox")
+                if agent_id:
+                    eleves.add(agent_id)
+ 
+                # Exercice
+                obj = st.get("object", {})
+                obj_id = obj.get("id")
+                if obj_id:
+                    exercices.add(obj_id)
+ 
+                # Competences
+                ext = obj.get("definition", {}).get("extensions", {})
+                kc_courante = None
+                for k, v in ext.items():
+                    if "competence" in k.lower() or "skill" in k.lower():
+                        competences.add(str(v))
+                        kc_courante = str(v)
+ 
+                # Reussite : on regarde le verbe ou le score xAPI.
+                reussite = self._reussite_depuis_xapi(st)
+ 
+                # On enregistre l'interaction si on a au moins eleve + KC + reussite.
+                if agent_id and kc_courante is not None and reussite is not None:
+                    interactions.append({
+                        "eleve": agent_id,
+                        "kc": kc_courante,
+                        "reussite": reussite,
+                    })
+ 
+            self.donnees_fichiers[nom] = {
+                "type": "JSON (xAPI)",
+                "eleves": len(eleves),
+                "exercices": len(exercices),
+                "competences": len(competences) if competences else "Non detecte",
+                "interactions": interactions,
+            }
+ 
+        except Exception as e:
+            print(f"Erreur JSON : {e}")
+            self.donnees_fichiers[nom] = {"type": "Erreur de lecture JSON", "interactions": []}
+ 
+    def _reussite_depuis_xapi(self, statement):
+        """Renvoie 1 (reussi), 0 (echoue) ou None (inconnu) pour un statement xAPI."""
+        # 1. On essaie via le resultat (success / score)
+        result = statement.get("result", {})
+        if isinstance(result, dict):
+            if "success" in result:
+                return 1 if result["success"] else 0
+            score = result.get("score", {})
+            if isinstance(score, dict) and "scaled" in score:
+                # scaled va de 0 a 1 : on considere >= 0.5 comme reussi.
+                return 1 if score["scaled"] >= 0.5 else 0
+ 
+        # 2. Sinon via le verbe
+        verbe = statement.get("verb", {})
+        verbe_id = (verbe.get("id") or "").lower()
+        if "passed" in verbe_id or "completed" in verbe_id or "mastered" in verbe_id:
+            return 1
+        if "failed" in verbe_id:
+            return 0
+ 
+        return None
+ 
+    def charger_texte_csv(self, chemin, nom):
+        try:
+            with open(chemin, 'r', encoding='utf-8') as f:
+                echantillon = f.read(2048)
+                delimiteur = '\t' if '\t' in echantillon else ','
+                f.seek(0)
+ 
+                lecteur = csv.reader(f, delimiter=delimiteur)
+                entetes = next(lecteur, None)
+ 
+                if not entetes:
+                    return
+ 
+                entetes_propres = [h.strip().lower() for h in entetes]
+ 
+                idx_student = -1
+                idx_problem = -1
+                idx_kc = -1
+                idx_result = -1  # NOUVEAU : colonne reussite
+ 
+                for i, h in enumerate(entetes_propres):
+                    if any(k in h for k in ["anon student id", "student", "eleve", "user"]):
+                        idx_student = i
+                    if any(k in h for k in ["problem name", "problem", "exercice", "task"]):
+                        idx_problem = i
+                    if any(k in h for k in ["kc(subskills)", "kc", "competence", "skill"]):
+                        idx_kc = i
+                    if any(k in h for k in ["correct first attempt", "outcome", "success", "correct", "result"]):
+                        idx_result = i
+ 
+                eleves = set()
+                exercices = set()
+                competences = set()
+                interactions = []  # NOUVEAU
+ 
+                for ligne in lecteur:
+                    if not ligne:
+                        continue
+                    if idx_student != -1 and idx_student < len(ligne):
+                        eleves.add(ligne[idx_student])
+                    if idx_problem != -1 and idx_problem < len(ligne):
+                        exercices.add(ligne[idx_problem])
+                    if idx_kc != -1 and idx_kc < len(ligne):
+                        if ligne[idx_kc].strip():
+                            competences.add(ligne[idx_kc].strip())
+ 
+                    # On enregistre l'interaction si on a eleve + KC + resultat.
+                    if (idx_student != -1 and idx_kc != -1 and idx_result != -1
+                            and idx_student < len(ligne) and idx_kc < len(ligne)
+                            and idx_result < len(ligne)):
+                        eleve = ligne[idx_student].strip()
+                        kc = ligne[idx_kc].strip()
+                        reussite = self._reussite_depuis_texte(ligne[idx_result])
+                        if eleve and kc and reussite is not None:
+                            interactions.append({
+                                "eleve": eleve,
+                                "kc": kc,
+                                "reussite": reussite,
+                            })
+ 
+                type_str = "TSV (Tabulation)" if delimiteur == '\t' else "CSV"
+                self.donnees_fichiers[nom] = {
+                    "type": type_str,
+                    "eleves": len(eleves),
+                    "exercices": len(exercices),
+                    "competences": len(competences),
+                    "interactions": interactions,
+                }
+ 
+        except Exception as e:
+            print(f"Erreur Texte : {e}")
+            self.donnees_fichiers[nom] = {"type": "Erreur de lecture CSV", "interactions": []}
+ 
+    def _reussite_depuis_texte(self, valeur):
+        """Convertit une valeur texte (1, 0, 'correct', 'true'...) en 1, 0 ou None."""
+        v = str(valeur).strip().lower()
+        if v in ("1", "correct", "true", "ok", "yes", "y", "pass", "passed"):
+            return 1
+        if v in ("0", "incorrect", "false", "no", "n", "fail", "failed"):
+            return 0
+        return None
+
+    def export_fichier(self):
+        # 1. Récupérer le nom du fichier actuellement sélectionné
+        nom_fichier_actif = self.combobox.currentText()
+        if not nom_fichier_actif:
+            print("Aucun dataset sélectionné à exporter.")
+            return
+
+        # 2. Récupérer les données associées
+        infos = self.donnees_fichiers.get(nom_fichier_actif, {})
+        interactions = infos.get("interactions", [])
+
+        if not interactions:
+            print("Aucune donnée d'interaction à exporter.")
+            return
+
+        # 3. Ouvrir la boîte de dialogue pour choisir l'emplacement de sauvegarde
+        filtre = "Fichier CSV (*.csv)"
+        chemin, _ = QFileDialog.getSaveFileName(self, "Exporter le fichier", f"export_{nom_fichier_actif}.csv", filtre)
+
+        if chemin:
+            try:
+                # 4. Écrire les données au format CSV
+                with open(chemin, 'w', encoding='utf-8', newline='') as f:
+                    # On définit les colonnes (les clés de vos dictionnaires d'interactions)
+                    entetes = ["eleve", "kc", "reussite"]
+                    lecteur = csv.DictWriter(f, fieldnames=entetes, delimiter=',')
+                    
+                    # Écriture de la première ligne (entêtes)
+                    lecteur.writeheader()
+                    # Écriture de toutes les lignes d'interactions
+                    lecteur.writerows(interactions)
+                    
+                print(f"Exportation réussie : {chemin}")
+            except Exception as e:
+                print(f"Erreur lors de l'exportation CSV : {e}")
+
+ 
+if __name__ == '__main__':
+    now = datetime.datetime.now()
+    if os.path.exists("/home/loubna/Temp"):
+        logging.basicConfig(
+            filename='/home/loubna/KnowledgeTracer_'
+            + str(now.year) + '_' + str(now.month) + '_' + str(now.day) + '.log',
+            level=logging.INFO,
+        )
+        logger.info('KnowledgeTracer Started at ' + str(now.hour) + 'h' + str(now.minute))
+ 
+    app = QApplication(sys.argv)
+    knwoledgetracer = KnwoledgeTracer()
+    knwoledgetracer.show()
+    sys.exit(app.exec())

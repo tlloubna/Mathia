@@ -18,6 +18,9 @@ import src.Process.Heuristics.Theta_TresholdH as Theta_TresholdH
 import src.datamodel.GraphSkills as Graph 
 import seaborn as sns
 import src.Process.Heuristics.ZPD_KCs as ZPD_KCS
+import src.Process.Heuristics.ZPD_KCs as ZPDH
+import src.Process.Heuristics.ZPD_Pro as ZPDProp
+import src.Process.Heuristics.ZPD_Wds as ZPDWd
 NAME_FOLDER="Mathiadata3" #algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
 N_STUDENTS = 35717
@@ -455,8 +458,8 @@ def test1():
     kc_name_to_idx = {kc_list[i]: i for i in range(len(kc_list))}
     n_runs=1
     seeds=list(range(42,42+n_runs))
-    n_ks=min(25, q_matrix.shape[1])
-    time_list=[0.15]
+    n_ks=min(16, q_matrix.shape[1])
+    time_list=[0.35]
     
     #time_review=1 #en heures
     exos=list(range(q_matrix.shape[0]))
@@ -491,13 +494,12 @@ def test1():
             }
             
             heuristics = {
-                "ZPD": ZPD_KCS.ZPD_KCS(pathfilejs=FILE_PATH_JSON, kclist=kc_list, z1=0.2, z2=0.7),
-                "Révision à espacement fixe": MuBackH.MuBackH(mu=4, kc_list=kcs, Graph=None),
-                "Révision ciblée": Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4),
-                #"Révision ciblée multiKcs": Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4, multi_kc=True),
-                "Révision aléatoire": RandomH.RandomH(kc_list=kcs),
-                "Sans révision": Noreview.Noreview(),
-                
+                "MuBack(μ=4)":     MuBackH.MuBackH(mu=1, kc_list=all_kcs, Graph=None),
+                "ThetaThr(0.4)":   Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4),
+                "ZPD_window":   ZPDWd.ZPD_window(z1=0.2, z2=0.7),
+                "ZPD_kcs":          ZPDH.ZPD_KCS(datajs=data_js, kclist=kc_list, z1=0.2, z2=0.75),
+                "Random":          RandomH.RandomH(kc_list=all_kcs),
+                "NoReview":        Noreview.Noreview(),
             }
             for name, heuristic in heuristics.items():
                 print(f"Testing heuristic: {name}")
@@ -524,16 +526,18 @@ def test1():
         aggregated_global= aggregate_runs(all_runs_global)
         student_test = students[5]  # premier élève du run
 
-        all_gini = {}
+        """all_gini = {}
         all_shannon = {}
         for name, sim_results in all_runs_simulation_results.items():
             if name != "Sans révision":
+                plotHeatMapPMR(sim_results,all_runs_pmr_history[name] ,studentIndex=student_test,
+                   kc_idx_to_name=None, heuristic_name=name)
                 weeks, means, stds = ComputeGini_all(sim_results, all_runs_pmr_history[name], students)
                 all_gini[name] = (weeks, means, stds)
                 weeks, means, stds = ComputeShannon_all(sim_results, all_runs_pmr_history[name], students)
                 all_shannon[name] = (weeks, means, stds)
 
-        plot_all_diversity_avg(all_gini, all_shannon)
+        plot_all_diversity_avg(all_gini, all_shannon)"""
         plot_aggregated(aggregated_global, "PMR moyen", 
                     f"PMR global — Apprentissage + Rétention \n Protocle : {time_review*60} min/week \n N° KCs = {n_ks} ", 
                     n_runs=n_runs, xlabel="Weeks")
@@ -591,71 +595,10 @@ def generate_qmatrix_controlled(n_kcs, items_per_kc=3):
         for k in range(items_per_kc):
             item_idx = kc * items_per_kc + k
             qmat[item_idx, kc] = 1
-
     return qmat
-def test2():
-    profile = {
-    0: "maitrise",
-    1: "maitrise",
-    2: "en_cours",
-    3: "en_cours",
-    4: "ancien_oublie",
-    5: "ancien_oublie",
-    6: "jamais_vu",
-    7: "jamais_vu",
-    }
-    qmat=generate_qmatrix_controlled(n_kcs=8,items_per_kc=2)
-    df_hist = CreateHistoryStudent_Scenario(
-        students=[101, 102], qmatrix=qmat,
-        profile_per_kc=profile, n_days=10, t0=0, seed=42,
-    )
-    
-    params = {
-                "alpha_s": {s: np.random.normal(0, 1) for s in [101,102]},
-                "delta_j": {e: np.random.normal(1, 1) for e in list(range(qmat.shape[0]))},
-                "beta_j":  {kc: np.random.normal(-1, 1) for kc in list(range(qmat.shape[1]))},
-                "theta_wins":     {kc: [np.random.uniform(0, 2) for _ in range(5)] for kc in list(range(qmat.shape[0]))},
-                "theta_attempts": {kc: [np.random.uniform(0, 2) for _ in range(5)] for kc in list(range(qmat.shape[0]))},
-            }
-    heuristics = {
-                "ZPD": ZPD_KCS.ZPD_KCS(pathfilejs=FILE_PATH_JSON, kclist=list(range(qmat.shape[0])), z1=0.2, z2=0.7),
-                "Révision à espacement fixe": MuBackH.MuBackH(mu=4, kc_list=list(range(qmat.shape[0])), Graph=None),
-                "Révision ciblée": Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4),
-                #"Révision ciblée multiKcs": Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4, multi_kc=True),
-                "Révision aléatoire": RandomH.RandomH(kc_list=list(range(qmat.shape[0]))),
-                "Sans révision": Noreview.Noreview(),
-                
-            }
-    t_eval = 10 * 24 * 3600
-    items_per_kc = {}
-    for kc in range(qmat.shape[1]):
-        items = np.where(qmat[:, kc] == 1)[0]
-        if len(items) > 0:
-            items_per_kc[kc] = items
-
-    dfkcs=[]
-    for name,heuris in heuristics.items():
-        for std in [101,102]:
-            queues_init, kcs_init = history_to_queues(df_hist, student=std)
-            last_review_init = history_to_last_review(df_hist, student=std)
-            item, kcs_chosen = heuris.HeuristicTochooseItemfromQ(
-                        week=10*24//7,  # semaine courante (≈ 1 ici)
-                        kcs_introduced=kcs_init,
-                        q_mat_=qmat,
-                        student=101,
-                        queues=queues_init,
-                        params=params,
-                        t_current=t_eval,
-                        items_per_kc=items_per_kc,
-                        dictPkcs=None,
-                        kc_idx_to_name=None,
-                        kc_name_to_idx=None,
-                    )
 
 
 
-
-    return df_hist,queues_init,last_review_init
 from utils.this_queue import OurQueue
 
 
@@ -683,14 +626,167 @@ def history_to_last_review(history_df, student, seconds_per_week=7*24*3600):
         last_review[int(kc)] = int(last_ts // seconds_per_week)
     return last_review
 
+import copy
 
 
+def compute_pmr_for_kc(kc, params, queues, t_eval, alpha_s, items_per_kc):
+    items = items_per_kc.get(kc, [])
+    if len(items) == 0:
+        delta_j = -1
+    else:
+        delta_j = params["delta_j"][int(items[0])]
+    
+    beta = params["beta_j"].get(kc, 0)
+    
+    if kc in queues:
+        cw = queues[kc]["wins"].get_counters(t_eval)
+        ca = queues[kc]["attempts"].get_counters(t_eval)
+    else:
+        cw = [0] * 5
+        ca = [0] * 5
+    
+    h = sum(
+        params["theta_wins"][kc][i] * np.log(1 + cw[i]) +
+        params["theta_attempts"][kc][i] * np.log(1 + ca[i])
+        for i in range(5)
+    )
+    logit = alpha_s - delta_j + beta + h
+    return 1 / (1 + np.exp(-logit))
+
+
+def classify_mastery(pmr):
+    """Étiquette lisible pour le PMR."""
+    if pmr >= 0.7:
+        return "maîtrisé"
+    elif pmr >= 0.4:
+        return "en cours"
+    elif pmr > 0:
+        return "fragile"
+    else:
+        return "jamais vu"
+
+
+def build_comparison_table(df_hist, qmat, params, heuristics, students,
+                            t_eval, current_week, items_per_kc,
+                            all_kcs, seed=42):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for std in students:
+        queues_init, kcs_init = history_to_queues(df_hist, student=std)
+        last_review_init = history_to_last_review(df_hist, student=std)
+        alpha_s = params["alpha_s"][std]
+        pmr_per_kc = {
+            kc: compute_pmr_for_kc(kc, params, queues_init, t_eval,
+                                    alpha_s, items_per_kc)
+            for kc in all_kcs
+        }
+        choices_per_heuristic = {}
+        for name, heuristic in heuristics.items():
+            queues_copy = copy.deepcopy(queues_init)
+            if hasattr(heuristic, "reset"):
+                heuristic.reset()
+            if hasattr(heuristic, "last_review"):
+                heuristic.last_review = dict(last_review_init)
+            np.random.seed(seed)
+            try:
+                item, kcs_chosen = heuristic.HeuristicTochooseItemfromQ(
+                    week=current_week,
+                    kcs_introduced=kcs_init if kcs_init else all_kcs,
+                    q_mat_=qmat,
+                    student=std,
+                    queues=queues_copy,
+                    params=params,
+                    t_current=t_eval,
+                    items_per_kc=items_per_kc,
+                    dictPkcs=pmr_per_kc,
+                    kc_idx_to_name=None,
+                    kc_name_to_idx=None,
+                )
+            except Exception as e:
+                print(f"[!] {name} a échoué pour élève {std}: {e}")
+                kcs_chosen = []
+            
+            choices_per_heuristic[name] = set(int(k) for k in (kcs_chosen or []))
+        for kc in all_kcs:
+            row = {"student": std, "KC": kc}
+            for name in heuristics.keys():
+                row[name] = 1 if kc in choices_per_heuristic[name] else 0
+            row["pmr"] = round(pmr_per_kc[kc], 3)
+            row["niveau_maitrise"] = classify_mastery(pmr_per_kc[kc])
+            row["last_review_week"] = last_review_init.get(kc, None)
+            rows.append(row)
+    
+    df_table = pd.DataFrame(rows)
+    return df_table
+
+def test2():
+    n_kcs = 8
+    items_per_kc_count = 3
+    qmat = generate_qmatrix_controlled(n_kcs=n_kcs, items_per_kc=items_per_kc_count)
+    
+    profile = {
+        0: "maitrise",
+        1: "maitrise",
+        2: "en_cours",
+        3: "en_cours",
+        4: "ancien_oublie",
+        5: "ancien_oublie",
+        6: "jamais_vu",
+        7: "jamais_vu",
+    }
+    students = [101, 102]
+    df_hist = CreateHistoryStudent_Scenario(
+        students=students, qmatrix=qmat,
+        profile_per_kc=profile, n_days=10, t0=0, seed=42,
+    )
+    np.random.seed(42)
+    n_items = qmat.shape[0]
+    all_kcs = list(range(qmat.shape[1]))
+    
+    params = {
+        "alpha_s":        {s: np.random.normal(0, 1) for s in students},
+        "delta_j":        {e: np.random.normal(1, 1) for e in range(n_items)},
+        "beta_j":         {kc: np.random.normal(-1, 1) for kc in all_kcs},
+        "theta_wins":     {kc: [np.random.uniform(0, 2) for _ in range(5)] for kc in all_kcs},
+        "theta_attempts": {kc: [np.random.uniform(0, 2) for _ in range(5)] for kc in all_kcs},
+    }
+    items_per_kc = {}
+    for kc in all_kcs:
+        items = np.where(qmat[:, kc] == 1)[0]
+        if len(items) > 0:
+            items_per_kc[kc] = items
+    heuristics = {
+        "MuBack(μ=4)":     MuBackH.MuBackH(mu=1, kc_list=all_kcs, Graph=None),
+        "ThetaThr(0.4)":   Theta_TresholdH.ThetaTresholdH(theta_threshold=0.4),
+        "ZPD_window":   ZPDWd.ZPD_window(z1=0.2, z2=0.7),
+         "ZPD_kcs":          ZPDH.ZPD_KCS(datajs=data_js, kclist=kc_list, z1=0.2, z2=0.75),
+        "Random":          RandomH.RandomH(kc_list=all_kcs),
+        "NoReview":        Noreview.Noreview(),
+    }
+    n_days = 10
+    t_eval = n_days * 24 * 3600
+    current_week = n_days // 7  
+    df_table = build_comparison_table(
+        df_hist=df_hist, qmat=qmat, params=params,
+        heuristics=heuristics, students=students,
+        t_eval=t_eval, current_week=current_week,
+        items_per_kc=items_per_kc, all_kcs=all_kcs,
+        seed=42,
+    )
+    
+    print("\n=== HISTORIQUE ===")
+    print(df_hist)
+    print("\n=== TABLEAU COMPARATIF ===")
+    print(df_table.to_string(index=False))
+    
+    return df_hist, df_table
 if __name__ == "__main__":
 
-    time_execute=2
+    time_execute=1
     if time_execute==1: test1()
     else : 
-        df_hist,queues_init,last_review_init=test2()
+        df_hist, df_table=test2()
         print(df_hist)
+        print(df_table)
         print("!!!!!!!!!!!!!!!Done!!!!!!!!!!!!!!!!!")
 print("Simulation completed for all heuristics.")

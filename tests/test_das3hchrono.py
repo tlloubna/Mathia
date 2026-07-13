@@ -167,7 +167,7 @@ def testifTrainTesthas2class(df_train,df_test):
     if len(df_train["correct"].unique())==1 or len(df_test["correct"].unique())==1:
         return False
     return True
-def plot_comparaison(results_list: dict, choose=1, choose_split=3, n_lots=5):
+"""def plot_comparaison(results_list: dict, choose=1, choose_split=3, n_lots=5):
     if choose == 1:
         title_1 = "Method 1: Par étudiant"
     elif choose == 2:
@@ -183,9 +183,9 @@ def plot_comparaison(results_list: dict, choose=1, choose_split=3, n_lots=5):
         title_2 = f"Split 4: {n_lots} lots d'interactions — train cumulatif, test = lot suivant"
 
     students = list(results_list.keys())
-    fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=True)
+    fig, axes = plt.subplots(1, 1, figsize=(14, 10), sharex=True)
     ax_auc, ax_nll, ax_rmse = axes
-
+    #ax_auc = axes
     for student in students:
         res_list = results_list[student]
         if len(res_list) == 0:
@@ -244,17 +244,69 @@ def plot_comparaison(results_list: dict, choose=1, choose_split=3, n_lots=5):
         ax.set_xticklabels(tick_labels, fontsize=9)
 
     ax_auc.set_ylabel("AUC");  ax_auc.axhline(0.5, linestyle="--", color="gray")
-    ax_nll.set_ylabel("NLL")
-    ax_rmse.set_ylabel("RMSE")
-    ax_auc.set_xlabel("Séance active ")
+    #ax_nll.set_ylabel("NLL")
+    #ax_rmse.set_ylabel("RMSE")
+    ax_auc.set_xlabel("DAYS")
 
     ax_auc.legend(); ax_auc.grid(True, alpha=0.3)
-    ax_nll.grid(True, alpha=0.3)
-    ax_rmse.grid(True, alpha=0.3)
+    #ax_nll.grid(True, alpha=0.3)
+    #ax_rmse.grid(True, alpha=0.3)
     plt.suptitle(f"Stabilité de DAS3H — {title_1}\n{title_2}", fontsize=13)
     plt.tight_layout()
     plt.show()
+"""
 
+def plot_comparaison(results_list: dict, choose=1, choose_split=3, n_lots=5, savepath=None):
+    titles_1 = {1: "Method 1: Par étudiant", 2: "Method 2: Par lot d'étudiants"}
+    titles_2 = {
+        1: "Split 1: train < day, test = day",
+        2: f"Split 2: train <= day, test = day+1 (gap <= {MAX_GAP_DAYS} jours)",
+        3: "Split 3: jours actifs — train <= day_a, test = day_a+1",
+        4: f"Split 4: {n_lots} lots — train cumulatif, test = lot suivant",
+    }
+
+    fig, ax_auc = plt.subplots(figsize=(7, 4.5))
+
+    for res_list in results_list.values():
+        if not res_list:
+            continue
+        x = range(1, len(res_list) + 1)
+        """ax_auc.plot(x, [r["AUC"] for r in res_list],
+                    linewidth=0.8, alpha=0.35, color="steelblue")"""
+
+    auc_by_day = defaultdict(list)
+    for res_list in results_list.values():
+        for d, r in enumerate(res_list):
+            auc_by_day[d].append(r["AUC"])
+
+    days_sorted = sorted(auc_by_day.keys())
+    x_ticks = list(range(1, len(days_sorted) + 1))
+    mean = np.array([np.mean(auc_by_day[d]) for d in days_sorted])
+    std  = np.array([np.std(auc_by_day[d])  for d in days_sorted])
+
+    ax_auc.plot(x_ticks, mean, color="steelblue", linewidth=2, label="Mean")
+    ax_auc.fill_between(x_ticks, mean - std, mean + std,
+                        color="steelblue", alpha=0.15, label="± 1 std. dev.")
+
+    if choose_split == 4:
+        tick_labels = [f"Lots 1..{k}" for k in range(1, n_lots)][:len(days_sorted)]
+    else:
+        tick_labels = [str(d + 1) for d in days_sorted]
+
+    ax_auc.set_xticks(x_ticks)
+    ax_auc.set_xticklabels(tick_labels, fontsize=9)
+    #ax_auc.axhline(0.5, linestyle="--", color="gray", linewidth=1)
+    ax_auc.set_xlabel("Step :Active days")
+    ax_auc.set_ylabel("AUC")
+    ax_auc.set_ylim(0.2, 1.0)
+    ax_auc.grid(True, alpha=0.3)
+    ax_auc.legend()
+    #ax_auc.set_title(f"Stabilité de DAS3H — {titles_1[choose]}\n{titles_2[choose_split]}", fontsize=11)
+
+    plt.tight_layout()
+    if savepath:
+        plt.savefig(savepath, dpi=300, bbox_inches="tight")  # ou .pdf pour LaTeX
+    plt.show()
 
 def plot_comparaison_lots(results_list: dict, choose=1):
     colors = ["steelblue", "coral", "forestgreen", "purple", "orange"]
@@ -302,12 +354,12 @@ if __name__ == "__main__":
     list_params={}
     all_users = sorted(df["user_id"].unique())
     all_items = sorted(df["item_id"].unique())
-    choose=2
+    choose=1
     max_student=30
     choose_split=2
     #sanity_check(df, q_matrix, windows)
     if choose ==1:
-        for student in students[:10]:
+        for student in students:
             df_train, df_test = ChooseSplit(Choose=choose_split, student=student, df=df)
             list_res=[]
             for i, (df_tr, df_te) in enumerate(zip(df_train, df_test)):

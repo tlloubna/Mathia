@@ -39,7 +39,6 @@ class alphaEstimator:
             mean_delta,
         ]])"""
         features = np.array([[0,mean_success_rate,mean_delta, ]])
-        
         features_scaled = self.scaler_kmeans.transform(features)
         cluster = self.kmeans.predict(features_scaled)[0]
         
@@ -69,6 +68,34 @@ class alphaEstimator:
             return -(ll + prior)
         result = minimize_scalar(neg_log_posterior, bounds=self.bounds, method='bounded')
         return result.x
+    
+
+
+class AlphaEstimatorUsingClass:
+    def __init__(self, params:dict=None, 
+                 kmeans=None, scaler_kmeans=None, cluster_stats=None):
+
+        self.params = params
+        self.kmeans = kmeans               
+        self.scaler_kmeans = scaler_kmeans 
+        self.cluster_stats = cluster_stats 
+
+    def _get_prior_from_cluster(self, X_student, y_student):
+        mean_success_rate = np.mean(y_student)
+        item_ids = X_student[:, 1].toarray().flatten().astype (int)
+        deltas = [self.params["delta_j"][item] 
+                for item in np.unique(item_ids) 
+                if item in self.params["delta_j"]]
+        mean_delta = np.mean(deltas) if len(deltas) > 0 else 0
+        features = np.array([[mean_success_rate,mean_delta, ]])
+        features_scaled = self.scaler_kmeans.transform(features)
+        cluster = self.kmeans.predict(features_scaled)[0]
+        mean_alpha = self.cluster_stats[cluster]["mean_alpha"]
+        std_alpha = self.cluster_stats[cluster]["std_alpha"]
+        return mean_alpha,std_alpha
+
+    
+
     
     
     

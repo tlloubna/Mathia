@@ -4,12 +4,11 @@ import src.Process.DAS3H as das3h
 from collections import defaultdict
 import re
 class ZPD_KCS():
-    def __init__(self,pathfilejs=None,kclist=None,z1=0.2,z2=0.7,):
-        self.jsfile=pathfilejs
+    def __init__(self,datajs=None,kclist=None,z1=0.2,z2=0.7,):
+        self.datajs=datajs
         self.limit1=z1
         self.limit2=z2
         self.kcslist=kclist
-        self.readjsfile()
         self.idx_to_json_id, self.json_id_to_idx=self.build_kc_mapping(kc_list=self.kcslist,data_js=self.datajs)
         self.children_of = defaultdict(list)
         for node in self.datajs:
@@ -75,9 +74,9 @@ class ZPD_KCS():
                 return child_idx
         
         return kc_idx
-    def readjsfile(self):
-        with open(self.jsfile,"r") as file : 
-            self.datajs=json.load(file)
+    
+
+
     def computepmr(self,kc,items,params,queues,t_current,alpha_s):
         
         item = items[0]  

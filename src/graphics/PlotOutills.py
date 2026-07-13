@@ -1,345 +1,259 @@
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
+
 import seaborn as sns
 import numpy as np
-from utils.this_queue import OurQueue
-from sklearn.cluster import KMeans
-# Palette commune
-BLUE   = "#4C9BE8"
-PINK   = "#E85C8A"
-GREEN  = "#3DBE8A"
-ORANGE = "#F5A623"
-PURPLE = "#9B59B6"
-COLORS = [BLUE, PINK, GREEN, ORANGE, PURPLE, "#E74C3C", "#1ABC9C", "#F39C12"]
-DARK_BG = "#1C1C2E"
-CARD_BG = "#252540"
-
-"""plt.rcParams.update({
-    "figure.facecolor": DARK_BG,
-    "axes.facecolor":   CARD_BG,
-    "axes.edgecolor":   "#3A3A5C",
-    "axes.labelcolor":  "#CCCCDD",
-    "xtick.color":      "#888899",
-    "ytick.color":      "#888899",
-    "text.color":       "#CCCCDD",
-    "grid.color":       "#2E2E4E",
-    "grid.linewidth":   0.6,
-})"""
 
 
-class PlotOUTILS:
-    def __init__(self):
-        pass
 
+HEURISTIC_COLORS = {
+    "ThetaThr_0.4": plt.cm.Set2(0),
+    "ZPD_window":      plt.cm.Set2(1),
+    "ZPD_kcs":       plt.cm.Set2(2),
+    "MuBack_mu4":   plt.cm.Set2(3),
+    "Random":       plt.cm.Set2(4),
+    "NoReview":     plt.cm.Set2(5),
+}
+def get_kc_colors(all_kcs):
+    
+    cmap = plt.cm.tab10
+    kcs_sorted = sorted(all_kcs)
+    return {kc: cmap(i % 10) for i, kc in enumerate(kcs_sorted)}
+
+def plot_Q_matrix( Q=None, max_items=200):
+    Q_small = Q[:max_items, :]
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(Q_small, cmap="Greys", cbar=False)
+    plt.xlabel("Skills (KC)")
+    plt.ylabel("Items")
+    plt.title(f"Matrix Q (display limited to {max_items} items)")
+    plt.show()
+
+    
+def plot_performances(perf_df, students, metric="pmr_final_moyen"):
+    for std in students:
+        sub = perf_df[perf_df["élève"] == std]
+        fig, ax = plt.subplots(figsize=(8, 5))
+        ax.bar(sub["heuristique"], sub[metric],
+            color=plt.cm.Set2(np.arange(len(sub))))
+        ax.set_ylabel(metric)
+        ax.set_title(f"Performance ({metric}) — Élève {std}")
+        ax.grid(True, axis="y", alpha=0.3)
+        for i, v in enumerate(sub[metric].values):
+            ax.text(i, v, f"{v:.2f}", ha="center", va="bottom", fontsize=9)
+        plt.xticks(rotation=20)
+        plt.tight_layout()
+        plt.show()
+
+
+def plot_efficacite(perf_df, students):
+    """Croise effort (révisions) et résultat (gain moyen) par élève."""
+    for std in students:
+        sub = perf_df[perf_df["élève"] == std]
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.scatter(sub["total_révisions"], sub["gain_moyen"], s=120,
+                color=plt.cm.Set2(np.arange(len(sub))), edgecolors="black",
+                zorder=3)
+        for _, r in sub.iterrows():
+            ax.annotate(r["heuristique"],
+                        (r["total_révisions"], r["gain_moyen"]),
+                        textcoords="offset points", xytext=(6, 6), fontsize=9)
+        ax.set_xlabel("Total révisions ")
+        ax.set_ylabel("Gain moyen de PMR (résultat)")
+        ax.set_title(f"Efficacité : résultat vs Total révisions— Élève {std}")
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+
+def plot_choices_heatmap(df_table, heuristic_names, student, n_review_weeks=4):
+    fig, axes = plt.subplots(1, len(heuristic_names),
+                            figsize=(5 * len(heuristic_names), 6),
+                            sharey=True)
+    if len(heuristic_names) == 1:
+        axes = [axes]
+
+    df_std = df_table[df_table["student"] == student].set_index("KC")
+
+    for ax, name in zip(axes, heuristic_names):
+        cols = [f"{name}_w{w}" for w in range(n_review_weeks)]
+        matrix = df_std[cols]
+        matrix.columns = [f"S{w}" for w in range(n_review_weeks)]
+        sns.heatmap(matrix, annot=True, fmt="d", cmap="YlOrRd",
+                    cbar_kws={"label": "nb choix"}, ax=ax,
+                    vmin=0)
+        ax.set_title(name)
+        ax.set_xlabel("Semaine de révision")
+
+    axes[0].set_ylabel("KC")
+    plt.suptitle(f"Choix par heuristique — Élève {student}", fontsize=14)
+    plt.tight_layout()
+    plt.show()
+
+
+    
+def plot_pmr_timeline(pmr_evolution, choices_per_heuristic, student,
+                    heuristic_names, n_review_weeks, kc_colors,
+                    threshold_mastery=0.7, threshold_low=0.4):
+    n_heuristics = len(heuristic_names)
+    fig, axes = plt.subplots(n_heuristics, 1,
+                            figsize=(14, 4 * n_heuristics),
+                            sharex=True, sharey=True)
+    if n_heuristics == 1:
+        axes = [axes]
+
+    x_ticks = list(range(-1, n_review_weeks))
+    x_labels = ["init"] + [f"S{w}" for w in range(n_review_weeks)]
+
+    all_kcs = sorted(pmr_evolution[heuristic_names[0]][-1].keys())
+
+    for ax, name in zip(axes, heuristic_names):
+        for kc in all_kcs:
+            y = [pmr_evolution[name][w][kc] for w in x_ticks]
+            ax.plot(x_ticks, y, marker="o", color=kc_colors[kc],
+                    label=f"KC {kc}", linewidth=2, markersize=6, alpha=0.8)
+
+            for w in range(n_review_weeks):
+                n_choices = choices_per_heuristic[name].get(w, []).count(kc)
+                if n_choices > 0:
+                    pmr_val = pmr_evolution[name][w][kc]
+                    ax.scatter(w, pmr_val, color=kc_colors[kc], marker="*",
+                            s=200 + 30 * n_choices, zorder=5,
+                            edgecolors="black", linewidths=1)
+        ax.set_xticks(x_ticks)
+        ax.set_xticklabels(x_labels)
+        ax.set_ylim(-0.05, 1.05)
+        ax.set_ylabel("PMR")
+        ax.set_title(f"{name}", fontsize=11, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left",
+                fontsize=8, ncol=1)
+
+    axes[-1].set_xlabel("Semaine de révision")
+    plt.suptitle(f"Évolution du PMR — Élève {student}\n"
+                f"★ = KC révisé cette semaine (taille proportionnelle au nb de révisions)",
+                fontsize=13)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_hist_pratique_par_eleve(df_hist, kc_colors, mode="count"):
+    counts = df_hist.groupby(["user_id", "KC"]).size().unstack(fill_value=0)
+
+    if mode == "proportion":
+        counts = counts.div(counts.sum(axis=1), axis=0)
+        ylabel = "Proportion des pratiques"
+    else:
+        ylabel = "Nombre de pratiques"
+
+    students = counts.index.tolist()
+    kcs = counts.columns.tolist()
+    n_students = len(students)
+    n_kcs = len(kcs)
+
+    x = np.arange(n_students)
+    width = 0.8 / n_kcs
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, kc in enumerate(kcs):
+        offsets = x - 0.4 + width * (i + 0.5)
+        ax.bar(offsets, counts[kc].values, width,
+            label=f"KC {kc}", color=kc_colors.get(kc, "#cccccc"))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"Élève {s}" for s in students])
+    ax.set_ylabel(ylabel)
+    ax.set_title(f"Pratique des compétences sur l'historique ({mode})")
+    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+def reconstruct_choices_from_table(df_table, student, heuristic_names,
+                                    n_review_weeks):
+    df_std = df_table[df_table["student"] == student]
+    choices = {name: {w: [] for w in range(n_review_weeks)}
+               for name in heuristic_names}
+    for _, row in df_std.iterrows():
+        kc = int(row["KC"])
+        for name in heuristic_names:
+            for w in range(n_review_weeks):
+                n = int(row[f"{name}_w{w}"])
+                choices[name][w].extend([kc] * n)
+    return choices
+
+def plot_par_niveau(agg_niveau, metric="gain_moyen"):
+    pivot = agg_niveau[metric].unstack("heuristique")
    
-    def plot_Q_matrix(self, Q=None, max_items=200):
-        Q_small = Q[:max_items, :]
-        plt.figure(figsize=(12, 8))
-        sns.heatmap(Q_small, cmap="Greys", cbar=False)
-        plt.xlabel("Skills (KC)")
-        plt.ylabel("Items")
-        plt.title(f"Matrix Q (display limited to {max_items} items)")
-        plt.show()
-
-    def PlotScoreDifficulty(self, score_diff=None):
-        sns.heatmap(score_diff[['difficulty_score']], cmap="Reds", annot=False)
-        plt.title("Heatmap des difficultés des KC")
-        plt.show()
-
-    def plot_all_forgetting_curves(self, forgettingDict):
-        plt.figure(figsize=(10, 6))
-        t = np.linspace(0, 40, 2)
-        for kc, (a, b) in forgettingDict.items():
-            P = 1 / (1 + np.exp(-(a - b * t)))
-            plt.plot(t, P, alpha=0.3)
-        plt.xlabel("Days")
-        plt.ylabel("Probabilité de réussite")
-        plt.title("Courbes d'oubli pour toutes les compétences")
-        plt.grid()
-        plt.show()
-
-    def plotpresence(self, presence, vars):
-        kcs    = list(presence.keys())
-        counts = list(presence.values())
-        plt.figure(figsize=(14, 6))
-        plt.bar(kcs, counts, color="mediumseagreen", edgecolor="black")
-        plt.xticks(rotation=90)
-        plt.xlabel(f"{vars[0]}")
-        plt.ylabel(f"{vars[1]}")
-        plt.grid(axis="y", alpha=0.4)
-        plt.tight_layout()
-        plt.show()
-
-    def PlotROC(self, TPR, FPR, AUC):
-        plt.figure(figsize=(14, 6))
-        plt.plot(FPR, TPR, alpha=0.6, color=BLUE, lw=2)
-        plt.plot([0, 1], [0, 1], "--", color="#555566", lw=1)
-        plt.xlabel("False Positive Rate (FPR)")
-        plt.ylabel("True Positive Rate (TPR)")
-        plt.title(f"ROC Curve  (AUC = {AUC:.3f})")
-        plt.grid(True, linestyle="--", alpha=0.5)
-        plt.tight_layout()
-        plt.show()
-
-    def ComputeHteta(self,kc_list,params,nwins,natt,nfails):
-         #nwins : le nombre de ressite pour les 4 plages [1 2 3 4 ] {"kc":[1 4 6 0]}
-         #natte :{"kc":[1 4 6 0]} :attemps
-         #nfails : {kc :5 }
-        mem=0
-        for kc in kc_list:
-            tw_wins=np.array(params["theta_wins"][kc])
-            tw_att=np.array(params["theta_attempts"][kc])
-            tf=params["theta_fails"].get(kc,0)
-            mem+=np.dot(tw_wins,np.log(1+nwins.get(kc)))
-            mem+=np.dot(tw_att,np.log(1+natt.get(kc)))
-            mem+=tf * nfails.get(kc)
-        return mem 
-
-    def ComputeNfailsAttWins(self, user_id, t_current, df, kc_list):
-        from collections import defaultdict
-        TW_SECONDS = [3600, 86400, 604800, 2592000, float("inf")]
-        df_user = df[
-            (df["user_id"] == user_id) & 
-            (df["timestamp"] < t_current)
-        ].copy()
-        if df_user.empty:
-            return (
-                {kc: np.zeros(5) for kc in kc_list},
-                {kc: np.zeros(5) for kc in kc_list},
-                {kc: 0 for kc in kc_list}
-            )
-        wins_timestamps  = defaultdict(list)  # {kc: [t1, t2, ...]}
-        fails_count      = defaultdict(int)   # {kc: nb_fails}
-        attempts_timestamps = defaultdict(list)
-        for _, row in df_user.iterrows():
-            t       = float(row["timestamp"])
-            correct = int(row["correct"])
-            kcs_row = str(row["KC"]).split("~~")
-            for kc in kcs_row:
-                if kc in kc_list:
-                    attempts_timestamps[kc].append(t)
-                    if correct == 1:
-                        wins_timestamps[kc].append(t)
-                    else:
-                        fails_count[kc] += 1
-        nwins  = {}
-        natt   = {}  
-        nfails = {}
-        for kc in kc_list:
-            wins_ts = wins_timestamps[kc]
-            att_ts  = attempts_timestamps[kc]
-            wins_counts = []
-            for tw in TW_SECONDS:
-                if tw == float("inf"):
-                    wins_counts.append(len(wins_ts))
-                else:
-                    n = sum(1 for t in wins_ts if (t_current - t) <= tw)
-                    wins_counts.append(n)
-            att_counts = []
-            for tw in TW_SECONDS:
-                if tw == float("inf"):
-                    att_counts.append(len(att_ts))
-                else:
-                    n = sum(1 for t in att_ts if (t_current - t) <= tw)
-                    att_counts.append(n)
-            
-            nwins[kc]  = np.array(wins_counts, dtype=float)
-            natt[kc]   = np.array(att_counts, dtype=float)
-            nfails[kc] = fails_count[kc]
-        
-        return nwins, natt, nfails
-        
-    def PlotProbVsAbilityAllItems(self, params: dict, df, user_id, 
-                                    nb_items: int = 10, t_current=None):
-       
-        sigmoid = lambda x: 1 / (1 + np.exp(-x))        
-        if t_current is None:
-            df_user = df[df["user_id"] == user_id]
-            if df_user.empty:
-                print(f"[ERREUR] Élève {user_id} introuvable dans df")
-                return
-            t_current = df_user["timestamp"].max()
-        clusters = self.CluesterItemSTd(params, n_clusters=100,var="delta_j")
-        
-
-        selected_item = clusters[0][:5]
-        alphas = np.linspace(-3, 3, 300)
-        fig, ax = plt.subplots(figsize=(12, 6))
-        for i, item_id in enumerate(selected_item):
-            item_rows = df[df["item_id"] == item_id]
-            if item_rows.empty:
-                continue
-            kc_str  = item_rows.iloc[0]["KC"]
-            kc_list = str(kc_str).split("~~")
-            delta_j = params["delta_j"].get(item_id, 0.0)
-            beta_total = sum(params["beta_k"].get(kc, 0.0) for kc in kc_list)
-            nwins, natt, nfails = self.ComputeNfailsAttWins(
-                user_id, t_current, df, kc_list
-            )
-            hteta = self.ComputeHteta(kc_list, params, nwins, natt, nfails)
-            logits = alphas - delta_j + beta_total + hteta + params["intercept"]
-            probs  = sigmoid(logits)
-            color = COLORS[i % len(COLORS)]
-            label = f"Item {item_id} (δ={delta_j:.2f}, mem={hteta:.2f})"
-            
-            ax.plot(alphas, probs, color=color, lw=2, label=label, alpha=0.85)
-            
-        
-        # Marquer l'ability réelle de l'élève
-        real_alpha = params["alpha_s"].get(user_id, 0.0)
-        ax.axvline(real_alpha, color=ORANGE, lw=2, linestyle="-", alpha=0.8,
-                label=f"Ability élève {user_id} (alpha={real_alpha:.2f})")
-        
-        ax.set_xlabel("Ability alpha")
-        ax.set_ylabel("P(correct)")
-        #ax.set_ylim(0, 1)
-        ax.set_xlim(-3, 3)
-        ax.set_title(
-            f"P(correct) en fonction de l'ability \n"
-            
-        )
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
-
-    
-    def CluesterItemSTd(self, params: dict, n_clusters: int = 5,var="alpha_s"):
-        sep = params[var]
-        ids = list(sep.keys())
-        values = np.array(list(sep.values())).reshape(-1, 1)
-
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        labels = kmeans.fit_predict(values)
-
-        clusters = {i: [] for i in range(n_clusters)}
-        for uid, lab in zip(ids, labels):
-            clusters[lab].append(uid)
-
-        return clusters
-        
-    def choose_cluster_with_size(self, clusters, min_size=5, max_size=7):
-    
-        for cid, var in clusters.items():
-            if min_size <= len(var) <= max_size:
-                return cid
-        return None
-    
-
-    def FindStudentsSameMemory(self, params, df, item_id, t_current=None, eps=0.1):
-       
-        df_item = df[df["item_id"] == item_id]
-        if df_item.empty:
-            print(f"[ERREUR] item {item_id} introuvable dans df")
-            return {}
-
-        if t_current is None:
-            t_current = df_item["timestamp"].max()
-
-        kc_str = df_item.iloc[0]["KC"]
-        kc_list = str(kc_str).split("~~")
-        mem_by_student = {}
-        for user_id in df_item["user_id"].unique():
-
-            nwins, natt, nfails = self.ComputeNfailsAttWins(
-                user_id, t_current, df, kc_list
-            )
-            hteta = self.ComputeHteta(kc_list, params, nwins, natt, nfails)
-            mem_by_student[user_id] = hteta
-        groups = {}
-        used = set()
-
-        for u1, m1 in mem_by_student.items():
-            if u1 in used:
-                continue
-
-            groups[u1] = [u1]
-            used.add(u1)
-
-            for u2, m2 in mem_by_student.items():
-                if u2 in used:
-                    continue
-
-                if abs(m1 - m2) <= eps:
-                    groups[u1].append(u2)
-                    used.add(u2)
-
-        return groups
+    colors = [HEURISTIC_COLORS.get(h, "#cccccc") for h in pivot.columns]
+    ax = pivot.plot(kind="bar", figsize=(11, 6),
+                    color=colors, edgecolor="black")
+    ax.set_ylabel(metric)
+    ax.set_xlabel("Tranche de niveau initial")
+    ax.set_title(f"{metric} par niveau initial et par heuristique")
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.axhline(0, color="gray", linewidth=0.8)
+    plt.xticks(rotation=0)
+    plt.legend(title="heuristique", bbox_to_anchor=(1.02, 1), loc="upper left")
+    plt.tight_layout()
+    plt.show()
 
 
-
-    def probabVsdiffAllstudent(self,params:dict, df,item_id,nb_student:int=10,t_current=None):
-        sigmoid = lambda x: 1 / (1 + np.exp(-x))
-        
-        if t_current is None:
-            df_item = df[df["item_id"] == item_id]
-            if df_item.empty:
-                print(f"[ERREUR]  {item_id} introuvable dans df")
-                return
-            t_current = df_item["timestamp"].max() 
-        else :
-            df_item = df[df["item_id"] == item_id] 
-            if df_item.empty:
-                print(f"[ERREUR]  {item_id} introuvable dans df")
-                return
-
-        clusters = self.CluesterItemSTd(params, n_clusters=5,var="alpha_s")
-        cid = self.choose_cluster_with_size(clusters, min_size=5, max_size=7)
-        if cid is None:
-            print("Aucune classe avec 5 à 7 élèves")
-            return
-
-        selected_students = clusters[0][:5]
-        Stdsamemem=self.FindStudentsSameMemory(params=params,df=df,item_id=item_id,t_current=t_current,eps=0.3)
-        filtered = [ members for leader, members in Stdsamemem.items() if len(members) >= 2 ]
-        clean = [[int(x) for x in pair] for pair in filtered]
-        if len(clean)<1:
-            print("pas de std pour ex x qui partage meme memoire ")
-            return
-        deltas=np.linspace(-4,4,200)
-        fig, ax = plt.subplots(figsize=(12, 6))
-        for i, user_id in enumerate(clean[0]):
-            user_rows = df_item[df_item["user_id"] == user_id]
-            if user_rows.empty:
-                continue
-                
-            kc_str  = user_rows.iloc[0]["KC"]
-            kc_list = str(kc_str).split("~~")
-            alpha_s = params["alpha_s"].get(user_id, 0.0)
-            beta_total = sum(params["beta_k"].get(kc, 0.0) for kc in kc_list)
-            nwins, natt, nfails = self.ComputeNfailsAttWins(
-                user_id, t_current, df, kc_list
-            )
-            hteta = self.ComputeHteta(kc_list, params, nwins, natt, nfails)
-            logits = alpha_s-deltas + beta_total + hteta + params["intercept"]
-            probs  = sigmoid(logits)
-            color = COLORS[i % len(COLORS)]
-            label = f"student {user_id} (α={alpha_s:.2f}, mem={hteta:.2f})"
-            
-            ax.plot(deltas, probs, color=color, lw=2, label=label, alpha=0.85)
-
-        real_delta= params["delta_j"].get(item_id, 0.0)
-        ax.axvline(real_delta, color=ORANGE, lw=2, linestyle="-", alpha=0.8,
-                label=f"Difficulty item {user_id} (delta={real_delta:.2f})")
-        
-        ax.set_xlabel("Difficulty delta")
-        ax.set_ylabel("P(correct)")
-        #ax.set_ylim(0, 1)
-        ax.set_xlim(-3, 3)
-        ax.set_title(
-            f"P(correct) en fonction de la difficulté\n"
-            
-        )
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
-            
+def plot_global_comparison(agg, metric="gain_moyen", std_col="gain_std"):
+    agg_sorted = agg.sort_values(metric, ascending=False)
+    # couleurs dans l'ordre trié des heuristiques
+    colors = [HEURISTIC_COLORS.get(h, "#cccccc") for h in agg_sorted.index]
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(agg_sorted.index, agg_sorted[metric],
+           yerr=agg_sorted.get(std_col), capsize=5,
+           color=colors, edgecolor="black")
+    ax.set_ylabel(metric)
+    ax.set_title(f"Comparaison globale ({metric}) — moyenne ± écart-type")
+    ax.grid(True, axis="y", alpha=0.3)
+    ax.axhline(0, color="gray", linewidth=0.8)
+    plt.xticks(rotation=20)
+    plt.tight_layout()
+    plt.show()
 
 
+def plot_global_violin(full, metric="gain_moyen"):
+    ordre = (full.groupby("heuristique")[metric]
+                 .median().sort_values(ascending=False).index.tolist())
+    # palette = dict nom->couleur ; seaborn l'applique par nom, pas par position
+    fig, ax = plt.subplots(figsize=(9, 6))
+    sns.violinplot(data=full, x="heuristique", y=metric, order=ordre,
+                   hue="heuristique", legend=False,
+                   palette=HEURISTIC_COLORS, cut=0, inner="box", ax=ax)
+    ax.axhline(0, color="gray", linewidth=0.8)
+    ax.set_title(f"Distribution de {metric} par heuristique "
+                 f"({len(full)} observations)")
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.xticks(rotation=20)
+    plt.tight_layout()
+    plt.show()
 
 
+def plot_timing(df_timing, heuristic_colors=None):
+    agg = df_timing.groupby("heuristique")["temps_moyen_ms"].agg(["mean", "std"])
+    agg = agg.sort_values("mean")
+    colors = ([heuristic_colors.get(h, "#cccccc") for h in agg.index]
+              if heuristic_colors else None)
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.bar(agg.index, agg["mean"], yerr=agg["std"], capsize=5,
+           color=colors, edgecolor="black")
+    ax.set_ylabel("Temps moyen par décision (ms)")
+    ax.set_title("Coût de calcul par heuristique (moyenne ± écart-type sur les élèves)")
+    ax.grid(True, axis="y", alpha=0.3)
+    plt.xticks(rotation=20)
+    plt.tight_layout()
+    plt.show()
 
-
-
-
+def plot_timing_par_eleve(df_timing):
+    pivot = df_timing.pivot(index="student", columns="heuristique",
+                            values="temps_moyen_ms")
+    pivot.plot(kind="bar", figsize=(12, 6), edgecolor="black")
+    plt.ylabel("Temps moyen par décision (ms)")
+    plt.title("Temps de décision par élève et par heuristique")
+    plt.xticks(rotation=0)
+    plt.legend(title="heuristique", bbox_to_anchor=(1.02, 1), loc="upper left")
+    plt.tight_layout()
+    plt.show()

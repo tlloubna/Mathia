@@ -24,20 +24,20 @@ from sklearn.calibration import calibration_curve
 from sklearn.metrics import brier_score_loss, log_loss
 NAME_FOLDER="bridge_algebra06" #algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
-N_STUDENTS = 1146 # Number of students to use real user = 1146 , item =19355
+N_STUDENTS = 1146# Number of students to use real user = 1146 , item =19355
 MIN_INTERACTIONS = 30
 MODEL_C = 0.01  # Regularization parameter
 N_TIME_WINDOWS = 5
 
-def prepare_featuresRatioAlpha( data_folder,df,q_matrix: np.ndarray, stdmodel: SD.StudentDATA ):
+
+
+def prepare_featuresAlpha( data_folder,df,q_matrix: np.ndarray, stdmodel: SD.StudentDATA ):
     print("!!!!!!!!!!!!!!!!Preparing history !!!!!!!!!!!!")
-    
-    
     his = HIS.HistoryDATA(stdmodel=stdmodel)
-    X, user_ids, item_ids, listKC = his.ComputeHistoryfeaturesRatioAlpha(Q_mat=q_matrix, df=df)
+    X, user_ids, item_ids, listKC = his.ComputeHistoryFeaturesALPHASK(Q_mat=q_matrix, df=df)
     #save X to npz file
-    sparse.save_npz(os.path.join(data_folder, f"history_features_Ratio_Alpha{N_STUDENTS}std.npz"), sparse.csr_matrix(X))
-    np.savez(os.path.join(data_folder, f"history_metadata_Ratio_Alpha{N_STUDENTS}std.npz"), user_ids=user_ids, item_ids=item_ids, kc_list=listKC)
+    sparse.save_npz(os.path.join(data_folder, f"history_features_Alpha{N_STUDENTS}std.npz"), sparse.csr_matrix(X))
+    np.savez(os.path.join(data_folder, f"history_metadata_Alpha{N_STUDENTS}std.npz"), user_ids=user_ids, item_ids=item_ids, kc_list=listKC)
     return X, user_ids, item_ids, listKC
 
 
@@ -61,7 +61,7 @@ def test_model_training(data_folder,X, user_ids, item_ids, kc_list, model_c: lis
     for c, (model, results) in modeldict.items():
         joblib.dump(
             {"model": model, "results": results},
-            os.path.join(data_folder, f"das3h_model_RatioAlpha_C{c}_{N_STUDENTS}std.pkl")
+            os.path.join(data_folder, f"das3h_model_Alpha_C{c}_{N_STUDENTS}std.pkl")
         )
     return modeldict
 
@@ -118,62 +118,37 @@ def test_model_parameters(model: DAS3H.DAS3HModel):
     plt.show()
     return params
 
-def plot_calibration(y_true, y_pred_original, y_pred_alphask):
-    """
-    Si P=0.7 → l'élève doit réussir 70% du temps en réalité
-    C'est ça la calibration
-    """
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    for ax, y_pred, title in zip(
-        axes,
-        [y_pred_original, y_pred_alphask],
-        ["Modèle original (alpha_s)", "Modèle theta_ratio "]
-    ):
-        prob_true, prob_pred = calibration_curve(
-            y_true, y_pred, n_bins=10
-        )
-
-        ax.plot(prob_pred, prob_true,
-                marker='o', color="steelblue",
-                linewidth=2, label="modèle")
-        ax.plot([0, 1], [0, 1],
-                linestyle="--", color="gray",
-                label="calibration parfaite")
-        ax.fill_between(prob_pred,
-                        prob_true - 0.05,
-                        prob_true + 0.05,
-                        alpha=0.1, color="green",
-                        label="marge ±5%")
-        ax.set_xlabel("P prédite")
-        ax.set_ylabel("Taux réel de réussite")
-        ax.set_title(title)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-    plt.suptitle("Calibration — P prédite vs taux réel\n"
-                 "Courbe proche diagonale = bien calibré ",
-                 fontsize=13)
-    plt.tight_layout()
-    plt.show()
 
 
-def plot_calibration1(y_true, y_pred_original):
+def plot_calibration1(y_true,y_trueg, y_pred_alpha,ypred_global=None):
     #plot la courbe de calibration du modèle original
     fig, ax = plt.subplots(figsize=(7, 7))
     prob_true, prob_pred = calibration_curve(
-        y_true, y_pred_original, n_bins=10
+        y_true, y_pred_alpha, n_bins=10
     )   
+    prob_true_g, prob_pred_global= calibration_curve(
+        y_trueg, ypred_global, n_bins=10
+    )  
     ax.plot(prob_pred, prob_true,
             marker='o', color="steelblue",
-            linewidth=2, label="modèle original")
+            linewidth=2, label="modèle user_kcs")
+    
+    ax.plot(prob_pred_global, prob_true_g,
+            marker='o', color="salmon",
+            linewidth=2, label="modèle normal")
     ax.plot([0, 1], [0, 1],
             linestyle="--", color="gray",
             label="calibration parfaite")
     ax.fill_between(prob_pred,
                     prob_true - 0.05,
                     prob_true + 0.05,
-                    alpha=0.1, color="green",
+                    alpha=0.1, color="steelblue",
+                    label="marge ±5%")
+    
+    ax.fill_between(prob_pred_global,
+                    prob_true - 0.05,
+                    prob_true + 0.05,
+                    alpha=0.1, color="salmon",
                     label="marge ±5%")
     ax.set_xlabel("P prédite")
     ax.set_ylabel("Taux réel de réussite")
@@ -181,317 +156,148 @@ def plot_calibration1(y_true, y_pred_original):
     ax.grid(True, alpha=0.3)    
 
 
-    plt.suptitle("Calibration — P prédite vs taux réel\n"
-                 "Courbe proche diagonale = bien calibré \n"
-                 "Dataset : algebra05",
+    plt.suptitle(f"Calibration — P prédite vs taux réel\n"
+                f"Courbe proche diagonale = bien calibré \n"
+                 f"Dataset : {NAME_FOLDER}",
                  fontsize=13)
     plt.tight_layout()
     plt.show()
 
-def plot_real_theta_vs_future(df, params_original, params_ratio):
-    
-    Window  = ["1h", "1j", "1sem", "1mois", "∞"]
-    Timesec = [3600, 86400, 604800, 2592000, float("inf")]
-    results = []
+def plot_calibration_all_datasets_alpha():
+    """Trace les courbes de calibration (variante Alpha = user/kc) des 4 jeux
+    de données sur une seule et même courbe."""
 
-    for stud_id in df["user_id"].unique():
-        df_stud = df[df["user_id"] == stud_id].sort_values("timestamp")
-
-        for kc in df_stud["KC"].unique():
-            df_kc = df_stud[df_stud["KC"] == kc]
-            if len(df_kc) < 4:
-                continue
-
-            mid   = len(df_kc) // 2
-            passe = df_kc.iloc[:mid]
-            futur = df_kc.iloc[mid:]
-            t_mid = passe["timestamp"].iloc[-1]
-
-            # Features par fenêtre temporelle
-            wins_tw     = np.zeros(len(Timesec))
-            attempts_tw = np.zeros(len(Timesec))
-
-            for tw, delta in enumerate(Timesec):
-                if delta == float("inf"):
-                    df_tw = passe
-                else:
-                    df_tw = passe[passe["timestamp"] >= t_mid - delta]
-                wins_tw[tw]     = np.log(1 + df_tw["correct"].sum())
-                attempts_tw[tw] = np.log(1 + len(df_tw))
-
-            ratio_tw = wins_tw - attempts_tw
-
-            
-            if kc in params_original["theta_wins"]:
-                theta_wins_real     = np.dot(params_original["theta_wins"][kc],     wins_tw)
-                theta_attempts_real = np.dot(params_original["theta_attempts"][kc], attempts_tw)
-                sum_wins_attempts = theta_wins_real + theta_attempts_real
-            else:
-                theta_wins_real     = 0.0
-                theta_attempts_real = 0.0
-                sum_wins_attempts=0.0
-
-            if kc in params_ratio["theta_ratio"]:
-                theta_ratio_real = np.dot(params_ratio["theta_ratio"][kc], ratio_tw)
-            else:
-                theta_ratio_real = 0.0
-
-            taux_futur = futur["correct"].mean()
-
-            results.append({
-                "theta_wins_log":     theta_wins_real,
-                "theta_attempts_log": theta_attempts_real,
-                "Historique (params séparés)": sum_wins_attempts,
-                "Historique (params ratio)":    theta_ratio_real,
-                "taux_futur":          taux_futur
-            })
-
-    df_res = pd.DataFrame(results)
-
-    # Corrélations
-    print("=== Corrélations des VRAIS theta avec taux futur ===")
-    for feat in ["theta_wins_log", "theta_attempts_log","Historique (params séparés)", "Historique (params ratio)"]:
-        print(f"{feat} : {df_res[feat].corr(df_res['taux_futur']):.4f}")
-
-    # Visualisation
-    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
-    features = ["theta_wins_log", "theta_attempts_log","Historique (params séparés)", "Historique (params ratio)"]
-    titles = ["theta_wins_log vs Taux futur", "theta_attempts_log vs Taux futur",
-              "Historique (params séparés) vs Taux futur", "Historique (params ratio) vs Taux futur"]
-
-    for ax, feat, title in zip(axes, features, titles):
-        df_res["bin"] = pd.cut(df_res[feat], bins=10)
-        binned = df_res.groupby("bin")["taux_futur"].agg(["mean", "std"])
-
-        ax.plot(range(len(binned)), binned["mean"], marker='o')
-        ax.fill_between(range(len(binned)),
-                       binned["mean"] - binned["std"],
-                       binned["mean"] + binned["std"],
-                       alpha=0.2)
-        ax.set_title(title,fontsize=14)
-        ax.set_xlabel(f"{feat} ", fontsize=14)
-        ax.set_ylabel("Taux réussite futur moyen", fontsize=14)
-        ax.axhline(df_res["taux_futur"].mean(), color="red",
-                  linestyle="--", label="moyenne globale")
-        ax.legend()
-        ax.grid(True)
-
-    
-    plt.tight_layout()
-    plt.show()
-
-    return df_res
-def plot_log_vs_future_sucess(df, params_original, params_ratio):
-    """
-    Pour chaque élève x KC, on coupe l'historique en deux :
-    - passé  → calcule theta
-    - futur  → calcule taux réel de réussite
-    Puis on trace theta vs taux futur
-    """
-    results = []
-
-    for stud_id in df["user_id"].unique():
-        df_stud = df[df["user_id"] == stud_id].sort_values("timestamp")
-        
-        for kc in df_stud["KC"].unique():
-            df_kc = df_stud[df_stud["KC"] == kc]
-            if len(df_kc) < 4:  # besoin d'assez d'historique
-                continue
-            
-            mid = len(df_kc) // 2
-            passe = df_kc.iloc[:mid]
-            futur = df_kc.iloc[mid:]
-            
-            w = passe["correct"].sum()
-            a = len(passe)
-            
-            log_wins    = np.log(1 + w)
-            log_attempts = np.log(1 + a)
-            log_ratio   = np.log((1 + w) / (1 + a))
-            taux_futur        = futur["correct"].mean()
-            
-            results.append({
-                "log_wins":     log_wins,
-                "log_attempts": log_attempts,
-                "log_ratio":    log_ratio,
-                "taux_futur":     taux_futur
-            })
-
-    df_res = pd.DataFrame(results)
-
-    # Corrélations
-    print("=== Corrélations avec taux de réussite futur ===")
-    print(f"log(1+wins)     : {df_res['log_wins'].corr(df_res['taux_futur']):.4f}")
-    print(f"log(1+attempts) : {df_res['log_attempts'].corr(df_res['taux_futur']):.4f}")
-    print(f"log((1+wins)/(1+attempts))   : {df_res['log_ratio'].corr(df_res['taux_futur']):.4f}")
-
-    # Visualisation
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-    features = ["log_wins", "log_attempts", "log_ratio"]
-    titles   = ["log(1+wins) vs taux futur", "log(1+attempts) vs taux futur", "log((1+wins)/(1+attempts)) vs taux futur"]
-
-    for ax, feat, title in zip(axes, features, titles):
-        # Binning pour voir la tendance
-        df_res["bin"] = pd.cut(df_res[feat], bins=10)
-        binned = df_res.groupby("bin")["taux_futur"].agg(["mean", "std"])
-        
-        ax.plot(range(len(binned)), binned["mean"], marker='o')
-        ax.fill_between(range(len(binned)),
-                       binned["mean"] - binned["std"],
-                       binned["mean"] + binned["std"],
-                       alpha=0.2)
-        ax.set_title(title)
-        ax.set_xlabel(f"Bins de {feat} (croissant )")
-        ax.set_ylabel("Taux réussite futur moyen")
-        ax.axhline(df_res["taux_futur"].mean(), color="red",
-                  linestyle="--", label="moyenne globale")
-        ax.legend()
-        ax.grid(True)
-
-    plt.suptitle("Relation l'historique et le futur",
-                fontweight="bold")
-    plt.tight_layout()
-    plt.show()
-
-
-def compare_discrimination(df, params_original, params_alphask):
-
-    users     = df["user_id"].unique()
-    taux_reel = df.groupby("user_id")["correct"].mean()
-
-    alpha_original = [
-        params_original["alpha_s"].get(u, 0.0)
-        for u in users
+    # (nom_dossier, n_students, titre affiché, couleur)
+    datasets = [
+        ("Mathiadata",        25351, "MATHIA",            "steelblue"),
+        ("ASSISTments13_12",  15698, "ASSISTments",       "salmon"),
+        ("bridge_algebra06",  1146,  "Bridge Algebra 06", "mediumseagreen"),
+        ("algebra05",         574,   "Algebra 05",        "darkorange"),
     ]
 
-    alpha_by_user = defaultdict(list)
-    for (user_id, kc), val in params_alphask["alpha_sk"].items():
-        alpha_by_user[user_id].append(val)
+    model_c_list = [0.01, 0.1, 1]
 
-    alpha_sk_mean = [
-        np.mean(alpha_by_user[u]) if alpha_by_user[u] else 0.0
-        for u in users
-    ]
+    fig, ax = plt.subplots(figsize=(9, 9))
 
-    taux = [taux_reel.get(u, 0.5) for u in users]
+    for folder, n_students, title, color in datasets:
+        data_folder = os.path.join("data", folder)
 
-    corr_original = np.corrcoef(alpha_original, taux)[0, 1]
-    corr_alphask  = np.corrcoef(alpha_sk_mean,  taux)[0, 1]
+        # --- Charger le meilleur modèle Alpha selon le score AUC - NLL - RMSE ---
+        best_score = -float("inf")
+        best_model = None
+        best_results = None
+        best_c = None
 
-    print(f"Corrélation alpha_s  vs taux réel : {corr_original:.3f}")
-    print(f"Corrélation alpha_sk vs taux réel : {corr_alphask:.3f}")
+        for c in model_c_list:
+            model_path = os.path.join(
+                data_folder, f"das3h_model_Alpha_C{c}_{n_students}std.pkl"
+            )
+            if not os.path.exists(model_path):
+                continue
+            loaded = joblib.load(model_path)
+            results = loaded["results"]
+            score = results["AUC"] - results["NLL"] - results["RMSE"]
+            if score > best_score:
+                best_score = score
+                best_model = loaded["model"]
+                best_results = results
+                best_c = c
 
-    if corr_alphask > corr_original:
-        print("alpha_sk discrimine mieux les élèves")
-    else:
-        print("alpha_s original discrimine mieux")
+        if best_model is None:
+            print(f"[!] Aucun modèle Alpha trouvé pour {title}")
+            continue
 
-    # Graphe
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    for ax, alpha, title, corr in zip(
-        axes,
-        [alpha_original, alpha_sk_mean],
-        ["alpha_s original", "alpha_sk moyen"],
-        [corr_original, corr_alphask]
-    ):
-        ax.scatter(alpha, taux, alpha=0.4, s=20, color="steelblue")
-        z      = np.polyfit(alpha, taux, 1)
-        x_line = np.linspace(min(alpha), max(alpha), 100)
-        ax.plot(x_line, np.poly1d(z)(x_line),
-                color="red", linewidth=2)
-        ax.set_xlabel("Alpha estimé")
-        ax.set_ylabel("Taux réel de réussite")
-        ax.set_title(f"{title}\nr = {corr:.3f}")
-        ax.grid(True, alpha=0.3)
+        # --- Charger les features Alpha et calculer les prédictions ---
+        X = sparse.load_npz(
+            os.path.join(data_folder, f"history_features_Alpha{n_students}std.npz")
+        )
+        cols = list(range(X.shape[1]))
+        cols.remove(3)
+        X_no_col3 = X[:, cols]
 
+        p_pred_raw = best_model.predict_proba(X_no_col3)
+        p_pred = p_pred_raw if p_pred_raw.ndim == 1 else p_pred_raw[:, 1]
+        y_true = X[:, 3].toarray().flatten()
+
+        # --- Courbe de calibration ---
+        prob_true, prob_pred = calibration_curve(y_true, p_pred, n_bins=10)
+
+        ax.plot(prob_pred, prob_true, marker="o", color=color, linewidth=2,
+                label=f"{title} (C={best_c}, AUC={best_results['AUC']:.3f})")
+
+    # --- Référence : calibration parfaite ---
+    ax.plot([0, 1], [0, 1], linestyle="--", color="gray", label="calibration parfaite")
+    ax.fill_between([0, 1], [-0.05, 0.95], [0.05, 1.05],
+                    alpha=0.08, color="green", label="marge ±5%")
+
+    ax.set_xlabel("P prédite DAS3H_V2 ",fontsize=15)
+    ax.set_ylabel("Taux réel de réussite",fontsize=15)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.legend(fontsize=15)
+    ax.grid(True, alpha=0.3)
+
+    plt.suptitle("Calibration (variante user/kc) — P prédite vs taux réel\n"
+                 "Courbe proche de la diagonale = bien calibré (4 jeux de données)",
+                 fontsize=13)
     plt.tight_layout()
     plt.show()
 
-def plot_discrimination_by_kc(df, params_alphask, top_n_kc=10):
-    """
-    Pour chaque KC :
-    - calculer alpha_sk de chaque élève
-    - comparer avec son taux réel sur ce KC
-    - si corrélation forte → alpha_sk est informatif
-    """
-    kc_counts = df["KC"].value_counts().nlargest(top_n_kc).index
-    correlations = {}
-
-    for kc in kc_counts:
-        df_kc = df[df["KC"].str.contains(kc, regex=False)]
-        taux_par_user = df_kc.groupby("user_id")["correct"].mean()
-
-        alpha_vals = []
-        taux_vals  = []
-        for u, taux in taux_par_user.items():
-            a = params_alphask["alpha_sk"].get((u, kc), None)
-            if a is not None:
-                alpha_vals.append(a)
-                taux_vals.append(taux)
-
-        if len(alpha_vals) > 10:
-            corr = np.corrcoef(alpha_vals, taux_vals)[0, 1]
-            correlations[kc] = corr
-
-    # Tracer
-    kcs   = list(correlations.keys())
-    corrs = list(correlations.values())
-
-    plt.figure(figsize=(12, 6))
-    colors = ["green" if c > 0.3 else
-              "orange" if c > 0.1 else "red"
-              for c in corrs]
-    plt.barh([k[:40] for k in kcs], corrs, color=colors)
-    plt.axvline(0.3, color="green",  linestyle="--",
-                label="seuil bon (0.3)")
-    plt.axvline(0.1, color="orange", linestyle="--",
-                label="seuil acceptable (0.1)")
-    plt.xlabel("Corrélation alpha_sk / taux réel par KC")
-    plt.title("Est-ce que alpha_sk est informatif par KC ?\n"
-              "Vert = bon, Orange = faible, Rouge = inutile")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig("discrimination_by_kc.png", dpi=150)
-    plt.show()
-
-    print("\nCorrélation moyenne : "
-          f"{np.mean(list(correlations.values())):.3f}")
-    print("KCs bien discriminés (r>0.3) : "
-          f"{sum(1 for c in corrs if c > 0.3)}/{len(corrs)}")
 if __name__ == "__main__":
-    timetoexeucte=3 #Time to execute
+    timetoexeucte=4#Time to execute
 
     if timetoexeucte==1: 
         df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
         q_matrix = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()
         start=time.time()
-        X, user_ids, item_ids, kc_list = prepare_featuresRatioAlpha(DATA_FOLDER,df,q_matrix, stdmodel=None)
+        X_alpha, user_ids, item_ids, kc_list = prepare_featuresAlpha(DATA_FOLDER,df,q_matrix, stdmodel=None)
         end=time.time()
         print(f"Time to prepare features: {end - start:.2f} seconds")
     elif timetoexeucte==2:
+
         df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
         q_matrix = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()
-        X=sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Ratio_Alpha{N_STUDENTS}std.npz"))
-        metadata = np.load(os.path.join(DATA_FOLDER, f"history_metadata_Ratio_Alpha{N_STUDENTS}std.npz"), allow_pickle=True)
+        X_alpha=sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Alpha{N_STUDENTS}std.npz"))
+        metadata = np.load(os.path.join(DATA_FOLDER, f"history_metadata_Alpha{N_STUDENTS}std.npz"), allow_pickle=True)
         user_ids = metadata["user_ids"]
         item_ids = metadata["item_ids"]
         kc_list = metadata["kc_list"]
-        
         start=time.time()
-        modeldict = test_model_training(DATA_FOLDER,X, user_ids, item_ids, kc_list, model_c=[0.01,0.1,1], n_tw=N_TIME_WINDOWS, perc_init=0.2)
+        modeldict = test_model_training(DATA_FOLDER,X_alpha, user_ids, item_ids, kc_list, model_c=[0.01,0.1,1], n_tw=N_TIME_WINDOWS, perc_init=0.8)
         end=time.time()
         print(f"Time to train model: {end - start:.2f} seconds")
+
     elif timetoexeucte==3:
         df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))  
+        X_alpha=sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_Alpha{N_STUDENTS}std.npz"))
+        X_global=sparse.load_npz(os.path.join(DATA_FOLDER, f"history_features_{N_STUDENTS}std.npz"))
+        model_pathR = os.path.join(DATA_FOLDER, f"das3h_model_Alpha_C1_{N_STUDENTS}std.pkl")
+        model_Alpha, results_Alpha = joblib.load(model_pathR)["model"], joblib.load(model_pathR)["results"]
+        model_pathoriginal = os.path.join(DATA_FOLDER, f"das3h_model_C1_{N_STUDENTS}std.pkl")
+        model_orginal, results_original = joblib.load(model_pathoriginal)["model"], joblib.load(model_pathoriginal)["results"]
         
-        
-        model_pathR = os.path.join(DATA_FOLDER, f"das3h_model_Ratio_C0.1_{N_STUDENTS}std.pkl")
-        model_pathO = os.path.join(DATA_FOLDER, f"das3h_model_C1.0_{N_STUDENTS}std.pkl")
-        model_Ratio, results_Ratio = joblib.load(model_pathR)["model"], joblib.load(model_pathR)["results"]
-        model_original, results_original = joblib.load(model_pathO)["model"], joblib.load(model_pathO)["results"]
+        cols = list(range(X_alpha.shape[1]))
+        cols.remove(3)
+        X_no_col3 = X_alpha[:, cols]
+        p_pred_raw = model_Alpha.predict_proba(X_no_col3)
+        p_pred = p_pred_raw if p_pred_raw.ndim == 1 else p_pred_raw[:, 1]
 
-        plot_real_theta_vs_future(df, model_original.get_params(), model_Ratio.get_paramsRatio())
-        print("Done")
+        cols_g= list(range(X_global.shape[1]))
+        cols_g.remove(3)
+        X_no_col3_g = X_global[:, cols_g]
+        p_pred_or = model_orginal.predict_proba(X_no_col3_g)
+        p_pred_or= p_pred_or if p_pred_or.ndim == 1 else p_pred_or[:, 1]
+        y_true = X_alpha[:, 3].toarray().flatten()
+        y_trueg = X_global[:, 3].toarray().flatten()
+
+        plot_calibration1(y_true,y_trueg, p_pred,ypred_global=p_pred_or)
+
+    elif timetoexeucte == 4:
+        plot_calibration_all_datasets_alpha()
+        print("Courbes de calibration Alpha des 4 datasets tracées")
+        
+        
+    print("Done")
     
 
     print("!!!!!!!!!!!!Done!!!!!!!!!!!!!!!!!!!")

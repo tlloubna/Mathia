@@ -119,7 +119,121 @@ class HistoryDATA:
        
         return sparse_df, self.user_ids, self.item_ids, listOfKC
     
+    def ComputeHistoryFeaturesTWKC_plusItems(self, Q_mat, df, vocab_users=None, vocab_items=None):
+        n_tw = self.n_tw
+        n_items = Q_mat.shape[0]
+        n_kc = Q_mat.shape[1]
+        # dict item -> set de CC
+        dict_q_mat = {i: set() for i in range(n_items)}
+        for item, kc in np.argwhere(Q_mat == 1):
+            dict_q_mat[item].add(kc)
 
+        X = {
+            "skills":        sparse.csr_matrix(np.empty((0, n_kc))),
+            "attempts":      sparse.csr_matrix(np.empty((0, n_kc * n_tw))),   # par CC
+            "wins":          sparse.csr_matrix(np.empty((0, n_kc * n_tw))),   # par CC
+            "fails":         sparse.csr_matrix(np.empty((0, n_kc))),
+            "attempts_item":  sparse.csr_matrix(np.empty((0, n_tw))),  # NEW : par item
+            "wins_item":     sparse.csr_matrix(np.empty((0, n_tw))),  # NEW : par item
+            "df":            np.empty((0, 5))
+        }
+
+        q = defaultdict(self.make_queue)
+
+        for idx, stud_id in enumerate(df["user_id"].unique()):
+            print("Stud_id:", idx + 1, "/", len(df["user_id"].unique()))
+
+            df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
+            df_stud = df_stud.sort_values("timestamp").to_numpy()
+            if df_stud.shape[0] == 0:
+                continue
+            X["df"] = np.vstack((X["df"], df_stud))
+
+            # Skills (inchangé)
+            skills_temp = Q_mat[df_stud[:, 1].astype(int)]
+            X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
+
+            # Attempts par CC (inchangé)
+            attempts = np.zeros((df_stud.shape[0], n_kc * n_tw))
+            for l, (item_id, t) in enumerate(zip(df_stud[:, 1], df_stud[:, 2])):
+                for kc in dict_q_mat[item_id]:
+                    attempts[l, kc*n_tw:(kc+1)*n_tw] = np.log(
+                        1 + np.array(q[stud_id, kc].get_counters(t))
+                    )
+                    q[stud_id, kc].push(t)
+            X["attempts"] = sparse.vstack([X["attempts"], sparse.csr_matrix(attempts)])
+
+            # Wins par CC (inchangé)
+            wins = np.zeros((df_stud.shape[0], n_kc * n_tw))
+            for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
+                for kc in dict_q_mat[item_id]:
+                    wins[l, kc*n_tw:(kc+1)*n_tw] = np.log(
+                        1 + np.array(q[stud_id, kc, "correct"].get_counters(t))
+                    )
+                    if correct:
+                        q[stud_id, kc, "correct"].push(t)
+            X["wins"] = sparse.vstack([X["wins"], sparse.csr_matrix(wins)])
+
+            # ---- NEW : Attempts par ITEM (fenêtres temporelles) ----
+            attempts_item = np.zeros((df_stud.shape[0], n_tw))
+            for l, (item_id, t) in enumerate(zip(df_stud[:, 1], df_stud[:, 2])):
+                item_id = int(item_id)
+                attempts_item[l] = np.log(1 + np.array(q[stud_id, "item", item_id].get_counters(t)))
+                q[stud_id, "item", item_id].push(t)
+            X["attempts_item"] = sparse.vstack([X["attempts_item"], sparse.csr_matrix(attempts_item)])
+
+        
+            # ---- NEW : Wins par ITEM (fenêtres temporelles) ----
+            wins_item = np.zeros((df_stud.shape[0], n_tw))
+            for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
+                item_id = int(item_id)
+                wins_item[l] = np.log(1 + np.array(q[stud_id, "item", item_id, "correct"].get_counters(t)))
+                if correct:
+                    q[stud_id, "item", item_id, "correct"].push(t)
+            X["wins_item"] = sparse.vstack([X["wins_item"], sparse.csr_matrix(wins_item)])
+               # Fails (inchangé)
+            fails = np.multiply(
+                np.cumsum(
+                    np.multiply(
+                        np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)),
+                        np.hstack(([0], 1 - df_stud[:, 3])).reshape(-1, 1)
+                    ), axis=0
+                )[:-1],
+                skills_temp
+            )
+            X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+
+        # One-hot users/items (inchangé)
+        enc_users = OneHotEncoder(handle_unknown='ignore', sparse_output=True)
+        enc_items = OneHotEncoder(handle_unknown='ignore', sparse_output=True)
+        enc_users.fit(np.array(vocab_users).reshape(-1, 1) if vocab_users is not None else X["df"][:, 0].reshape(-1, 1))
+        enc_items.fit(np.array(vocab_items).reshape(-1, 1) if vocab_items is not None else X["df"][:, 1].reshape(-1, 1))
+        X["users"] = enc_users.transform(X["df"][:, 0].reshape(-1, 1))
+        X["items"] = enc_items.transform(X["df"][:, 1].reshape(-1, 1))
+        self.user_ids = enc_users.categories_[0].tolist()
+        self.item_ids = enc_items.categories_[0].tolist()
+
+        listOfKC = []
+        for kc_raw in df["KC"].unique():
+            for elt in kc_raw.split("~~"):
+                listOfKC.append(elt)
+        listOfKC = np.unique(listOfKC)
+
+        # Construction finale : on AJOUTE wins_item et attempts_item à la fin
+        sparse_df = sparse.hstack([
+            sparse.csr_matrix(X["df"]),
+            X["users"],
+            X["items"],
+            X["skills"],
+            X["wins"],
+            X["fails"],
+            X["attempts"],
+            X["wins_item"],        # NEW
+            X["attempts_item"],    # NEW
+        ]).tocsr()
+
+        return sparse_df, self.user_ids, self.item_ids, listOfKC
+    
     def ComputeHistoryFeaturesALPHASK(self, Q_mat, df):
         n_tw=self.n_tw
         # Construire dict_q_mat
@@ -264,9 +378,6 @@ class HistoryDATA:
         n_kc_top    = len(top_kc_idx) 
         n_users     = df["user_id"].nunique()
         n_pairs     = n_users * n_kc_top  
-
-        print(f"Paramètres alpha_sk : {n_users} × {n_kc_top} = {n_pairs}")
-        print(f"Ratio estimé        : {len(df) / n_pairs:.1f}")
 
         user_ids_list = sorted(df["user_id"].unique())
         user_to_idx   = {u: i for i, u in enumerate(user_ids_list)}

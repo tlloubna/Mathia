@@ -22,9 +22,9 @@ import time
 from sklearn.calibration import calibration_curve
 
 from sklearn.metrics import brier_score_loss, log_loss
-NAME_FOLDER="bridge_algebra06" #algebra =574,item 1084
+NAME_FOLDER="Mathiadata_v2" #algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
-N_STUDENTS = 1146# Number of students to use real user = 1146 , item =19355
+N_STUDENTS =100000# Number of students to use real user = 1146 , item =19355
 MIN_INTERACTIONS = 30
 MODEL_C = 0.01  # Regularization parameter
 N_TIME_WINDOWS = 5

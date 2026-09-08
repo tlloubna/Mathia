@@ -13,18 +13,25 @@ from scipy import sparse
 import matplotlib.pyplot as plt
 import src.datamodel.Historydata as HIS
 import src.Process.DAS3H as DAS3H
-
-NAME_FOLDER="Mathiadata" #algebra =574,item 1084
+DATASETS = [
+     ("Mathiadata_v2",      100000,  "mathia"),
+    ("ASSISTments13_12", 15698, "assist12"),
+    ("bridge_algebra06", 1146,  "bridge06"),
+    ("algebra05",         574,  "algebra05"),
+   
+]
+NAME_FOLDER="ASSISTments13_12"#algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
-N_STUDENTS = 25351 # Number of students to use real user = 1146 , item =19355
+N_STUDENTS = 15698 # Number of students to use real user = 1146 , item =19355
 MIN_INTERACTIONS = 30
 
 
 def test_changeWindowdas3h(windows,data,Q_mat):
     his=HIS.HistoryDATA(TimeWindow=windows)
     X,user_ids,item_ids,listofKC=his.ComputeHistoryFeaturesTWKC(Q_mat,data)
+    
     model=DAS3H.DAS3HModel(C=1.0)
-    results=model.fit(X,user_ids,item_ids,listofKC,n_tw=len(windows),perc_init=0.2)
+    results=model.fit(X,user_ids,item_ids,listofKC,n_tw=len(windows),perc_init=0.8)
     return results
 
 def plot_window_comparaison(windows_configs, auc_list, nll_list, rmse_list):

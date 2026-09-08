@@ -128,15 +128,33 @@ class HistoryDATA:
         for item, kc in np.argwhere(Q_mat == 1):
             dict_q_mat[item].add(kc)
 
-        X = {
-            "skills":        sparse.csr_matrix(np.empty((0, n_kc))),
-            "attempts":      sparse.csr_matrix(np.empty((0, n_kc * n_tw))),   # par CC
-            "wins":          sparse.csr_matrix(np.empty((0, n_kc * n_tw))),   # par CC
-            "fails":         sparse.csr_matrix(np.empty((0, n_kc))),
-            "attempts_item":  sparse.csr_matrix(np.empty((0, n_tw))),  # NEW : par item
-            "wins_item":     sparse.csr_matrix(np.empty((0, n_tw))),  # NEW : par item
-            "df":            np.empty((0, 5))
+        # ===== ANCIENNE VERSION (vstack dans la boucle -> quadratique, OOM) =====
+        # X = {
+        #     "skills":        sparse.csr_matrix(np.empty((0, n_kc))),
+        #     "attempts":      sparse.csr_matrix(np.empty((0, n_kc * n_tw))),   # par CC
+        #     "wins":          sparse.csr_matrix(np.empty((0, n_kc * n_tw))),   # par CC
+        #     "fails":         sparse.csr_matrix(np.empty((0, n_kc))),
+        #     "attempts_item":  sparse.csr_matrix(np.empty((0, n_tw))),  # NEW : par item
+        #     "wins_item":     sparse.csr_matrix(np.empty((0, n_tw))),  # NEW : par item
+        #     "df":            np.empty((0, 5)),
+        #     "wins_cum":sparse.csr_matrix(np.empty((0, n_kc))),
+        #     "attempts_cum":sparse.csr_matrix(np.empty((0, n_kc))),
+        # }
+        # ========================================================================
+
+        # NOUVELLE VERSION : on accumule des petits blocs sparse dans des listes,
+        # puis UN SEUL vstack a la fin (lineaire au lieu de quadratique).
+        buffers = {
+            "skills":        [],
+            "attempts":      [],   # par CC
+            "wins":          [],   # par CC
+            "fails":         [],
+            "attempts_item": [],   # par item
+            "wins_item":     [],   # par item
+            "wins_cum":      [],
+            "attempts_cum":  [],
         }
+        df_rows = []
 
         q = defaultdict(self.make_queue)
 
@@ -147,11 +165,13 @@ class HistoryDATA:
             df_stud = df_stud.sort_values("timestamp").to_numpy()
             if df_stud.shape[0] == 0:
                 continue
-            X["df"] = np.vstack((X["df"], df_stud))
+            # X["df"] = np.vstack((X["df"], df_stud))
+            df_rows.append(df_stud)
 
             # Skills (inchangé)
             skills_temp = Q_mat[df_stud[:, 1].astype(int)]
-            X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
+            # X["skills"] = sparse.vstack([X["skills"], sparse.csr_matrix(skills_temp)])
+            buffers["skills"].append(sparse.csr_matrix(skills_temp))
 
             # Attempts par CC (inchangé)
             attempts = np.zeros((df_stud.shape[0], n_kc * n_tw))
@@ -161,7 +181,8 @@ class HistoryDATA:
                         1 + np.array(q[stud_id, kc].get_counters(t))
                     )
                     q[stud_id, kc].push(t)
-            X["attempts"] = sparse.vstack([X["attempts"], sparse.csr_matrix(attempts)])
+            # X["attempts"] = sparse.vstack([X["attempts"], sparse.csr_matrix(attempts)])
+            buffers["attempts"].append(sparse.csr_matrix(attempts))
 
             # Wins par CC (inchangé)
             wins = np.zeros((df_stud.shape[0], n_kc * n_tw))
@@ -172,7 +193,8 @@ class HistoryDATA:
                     )
                     if correct:
                         q[stud_id, kc, "correct"].push(t)
-            X["wins"] = sparse.vstack([X["wins"], sparse.csr_matrix(wins)])
+            # X["wins"] = sparse.vstack([X["wins"], sparse.csr_matrix(wins)])
+            buffers["wins"].append(sparse.csr_matrix(wins))
 
             # ---- NEW : Attempts par ITEM (fenêtres temporelles) ----
             attempts_item = np.zeros((df_stud.shape[0], n_tw))
@@ -180,9 +202,9 @@ class HistoryDATA:
                 item_id = int(item_id)
                 attempts_item[l] = np.log(1 + np.array(q[stud_id, "item", item_id].get_counters(t)))
                 q[stud_id, "item", item_id].push(t)
-            X["attempts_item"] = sparse.vstack([X["attempts_item"], sparse.csr_matrix(attempts_item)])
+            # X["attempts_item"] = sparse.vstack([X["attempts_item"], sparse.csr_matrix(attempts_item)])
+            buffers["attempts_item"].append(sparse.csr_matrix(attempts_item))
 
-        
             # ---- NEW : Wins par ITEM (fenêtres temporelles) ----
             wins_item = np.zeros((df_stud.shape[0], n_tw))
             for l, (item_id, t, correct) in enumerate(zip(df_stud[:, 1], df_stud[:, 2], df_stud[:, 3])):
@@ -190,8 +212,10 @@ class HistoryDATA:
                 wins_item[l] = np.log(1 + np.array(q[stud_id, "item", item_id, "correct"].get_counters(t)))
                 if correct:
                     q[stud_id, "item", item_id, "correct"].push(t)
-            X["wins_item"] = sparse.vstack([X["wins_item"], sparse.csr_matrix(wins_item)])
-               # Fails (inchangé)
+            # X["wins_item"] = sparse.vstack([X["wins_item"], sparse.csr_matrix(wins_item)])
+            buffers["wins_item"].append(sparse.csr_matrix(wins_item))
+
+            # Fails (inchangé)
             fails = np.multiply(
                 np.cumsum(
                     np.multiply(
@@ -201,7 +225,51 @@ class HistoryDATA:
                 )[:-1],
                 skills_temp
             )
-            X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+            # X["fails"] = sparse.vstack([X["fails"], sparse.csr_matrix(fails)])
+            buffers["fails"].append(sparse.csr_matrix(fails))
+
+            wins_cum = np.multiply(
+                np.cumsum(
+                    np.multiply(
+                        np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)),
+                        np.hstack(([0], df_stud[:, 3])).reshape(-1, 1)   # correct, pas 1-correct
+                    ), axis=0
+                )[:-1],
+                skills_temp
+            )
+            # X["wins_cum"] = sparse.vstack([X["wins_cum"], sparse.csr_matrix(wins_cum)])
+            buffers["wins_cum"].append(sparse.csr_matrix(wins_cum))
+
+            attempts_cum = np.multiply(
+                np.cumsum(np.vstack((np.zeros(skills_temp.shape[1]), skills_temp)), axis=0)[:-1],
+                skills_temp
+            )
+            # X["attempts_cum"] = sparse.vstack([X["attempts_cum"], sparse.csr_matrix(attempts_cum)])
+            buffers["attempts_cum"].append(sparse.csr_matrix(attempts_cum))
+
+        # ===== Assemblage final : UN SEUL vstack par bloc =====
+        # Dimensions de repli si un buffer est vide (aucun etudiant valide)
+        empty_ncols = {
+            "skills":        n_kc,
+            "attempts":      n_kc * n_tw,
+            "wins":          n_kc * n_tw,
+            "fails":         n_kc,
+            "attempts_item": n_tw,
+            "wins_item":     n_tw,
+            "wins_cum":      n_kc,
+            "attempts_cum":  n_kc,
+        }
+        X = {}
+        for key, blocks in buffers.items():
+            if blocks:
+                X[key] = sparse.vstack(blocks).tocsr()
+            else:
+                X[key] = sparse.csr_matrix((0, empty_ncols[key]))
+
+        if df_rows:
+            X["df"] = np.vstack(df_rows)
+        else:
+            X["df"] = np.empty((0, 5))
 
         # One-hot users/items (inchangé)
         enc_users = OneHotEncoder(handle_unknown='ignore', sparse_output=True)
@@ -230,6 +298,8 @@ class HistoryDATA:
             X["attempts"],
             X["wins_item"],        # NEW
             X["attempts_item"],    # NEW
+            X["wins_cum"],
+            X["attempts_cum"]
         ]).tocsr()
 
         return sparse_df, self.user_ids, self.item_ids, listOfKC

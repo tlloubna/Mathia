@@ -23,11 +23,11 @@ def ModelsToTest(has_item_blocks=True):
     """DAS3H : temporalité par CC (tw_kc). DASH : temporalité par item (tw_items)."""
     if has_item_blocks:
         return {
-            "DAS3H":    {"users": True,  "items": True,  "skills": True,  "wins": True,  "fails": False, "attempts": True,  "wins_item": False, "attempts_item": False},
-            "DASH":     {"users": True,  "items": True,  "skills": False, "wins": False, "fails": False, "attempts": False, "wins_item": True,  "attempts_item": True},
-            "IRT/MIRT": {"users": True,  "items": True,  "skills": False, "wins": False, "fails": False, "attempts": False, "wins_item": False, "attempts_item": False},
-            "PFA":      {"users": False, "items": False, "skills": True,  "wins": True,  "fails": True,  "attempts": False, "wins_item": False, "attempts_item": False},
-            "AFM":      {"users": False, "items": False, "skills": True,  "wins": False, "fails": False, "attempts": True,  "wins_item": False, "attempts_item": False},
+            "DAS3H":    {"users": True,  "items": True,  "skills": True,  "wins": True,  "fails": False, "attempts": True,  "wins_item": False, "attempts_item": False,"wins_cum":False,"attempts_cum":False},
+            "DASH":     {"users": True,  "items": True,  "skills": False, "wins": False, "fails": False, "attempts": False, "wins_item": True,  "attempts_item": True,"wins_cum":False,"attempts_cum":False},
+            "IRT/MIRT": {"users": True,  "items": True,  "skills": False, "wins": False, "fails": False, "attempts": False, "wins_item": False, "attempts_item": False,"wins_cum":False,"attempts_cum":False},
+            "PFA":      {"users": False, "items": False, "skills": True,  "wins": False,  "fails": True,  "attempts": False, "wins_item": False, "attempts_item": False,"wins_cum":True,"attempts_cum":False},
+            "AFM":      {"users": False, "items": False, "skills": True,  "wins": False, "fails": False, "attempts": False,  "wins_item": False, "attempts_item": False,"wins_cum":False,"attempts_cum":True},
         }
     return {
         "DAS3H":    {"users": True,  "items": True,  "skills": True,  "wins": True,  "fails": False, "attempts": True},
@@ -53,8 +53,12 @@ def build_model_columns(models, n_users, n_items, n_skills, n_tw, offset=4, has_
     if has_item_blocks:
         i_wi = (i_a[1],  i_a[1] + n_tw)
         i_ai = (i_wi[1], i_wi[1] + n_tw)
+        i_wc = (i_ai[1], i_ai[1] + n_skills)
+        i_ac = (i_wc[1], i_wc[1] + n_skills)        
         block_ranges["wins_item"] = i_wi
         block_ranges["attempts_item"] = i_ai
+        block_ranges["wins_cum"] = i_wc
+        block_ranges["attempts_cum"] = i_ac
 
     model_cols = {}
     for model_name, blocks in models.items():
@@ -188,8 +192,8 @@ def fitBayes(X, n_users, Xtrain, y_train, test_indices, y_test, full_cols, comb,
 
         X_eval = scaler.transform(X_user[N_init:])
         y_pred_comb[srt[N_init:]] = 1 / (1 + np.exp(-(X_eval @ coef + intercept + alpha_hat)))
-        X_init_s = scaler.transform(X_init)
-        y_pred_comb[srt[:N_init]] = 1 / (1 + np.exp(-(X_init_s @ coef + intercept + alpha_hat)))
+        """X_init_s = scaler.transform(X_init)
+        y_pred_comb[srt[:N_init]] = 1 / (1 + np.exp(-(X_init_s @ coef + intercept + alpha_hat)))"""
 
     valid = ~np.isnan(y_pred_comb)
     yp, yt = y_pred_comb[valid], y_test[valid]
@@ -226,7 +230,31 @@ def eval_bayes_cv(X, n_users, n_items, n_skills, n_tw, n_folds=5, seed=42):
 
     return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw}
 
+def eval_bayes_cv_Interaction(X, n_users, n_items, n_skills, n_tw, n_folds=5, seed=42):
+    y = X[:, 3].toarray().flatten()
+    cols_all = list(range(X.shape[1])); cols_all.remove(3)
+    Xs = X[:, cols_all]
+    users_col = Xs[:, 0].toarray().flatten()
+    timestamps = Xs[:, 2].toarray().flatten()
 
+    offset = 4
+    i_a_end = offset + n_users + n_items + n_skills + n_skills*n_tw + n_skills + n_skills*n_tw
+    cols = list(range(offset, i_a_end))
+
+    folds = make_cv_folds(users_col, timestamps,  "interaction", n_folds, seed)
+    raw = {"AUC": [], "NLL": [], "RMSE": []}
+
+    for k, (train_idx, test_idx) in enumerate(folds):
+        print(f"\n----- Bayes pli {k+1}/{n_folds} -----")
+        res = {}
+        fitBayes(X=Xs, n_users=n_users, Xtrain=Xs[train_idx][:, cols],
+                 y_train=y[train_idx], test_indices=test_idx, y_test=y[test_idx],
+                 full_cols=cols, comb="DAS3H+Bayes", results=res)
+        for m in ("AUC", "NLL", "RMSE"):
+            raw[m].append(res["DAS3H+Bayes"][m])
+        print(f"  AUC={raw['AUC'][-1]:.4f}")
+
+    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw}
 
 def eval_userskill_cv(data_folder, n_students, n_tw,
                       split_mode="user", n_folds=5, seed=42):
@@ -307,11 +335,12 @@ if __name__ == "__main__":
     #("bridge_algebra06", 1146)
     #("Mathiadata", 25351),
     #("ASSISTments13_12", 15698),
+     #("Mathiadata_v2", 100000)
     N_TW = 5
     N_FOLDS = 5
     SEED = 42
-    N_STUDENTS = 25351
-    FOLDER = "Mathiadata"
+    N_STUDENTS =   15698
+    FOLDER ="ASSISTments13_12"
     data_folder = os.path.join("data", FOLDER)
 
     path_dash = os.path.join(data_folder, f"history_features_DASH_{N_STUDENTS}std.npz")
@@ -345,11 +374,12 @@ if __name__ == "__main__":
     summ_inter, _ = fit_models_cv(X, n_users, n_items, n_kcs, N_TW,
                                   split_mode="interaction", n_folds=N_FOLDS,
                                   seed=SEED, has_item_blocks=has_item_blocks)
+    bayes_i = eval_bayes_cv_Interaction(X, n_users, n_items, n_kcs, N_TW, n_folds=N_FOLDS, seed=SEED)
     us_i = eval_userskill_cv(data_folder, N_STUDENTS, N_TW,
                              split_mode="interaction", n_folds=N_FOLDS, seed=SEED)
 
     res_inter = dict(summ_inter)
-    res_inter["DAS3H+Bayes"] = None          # Bayes : pas de sens en interaction
+    res_inter["DAS3H+Bayes"] = bayes_i         # Bayes : pas de sens en interaction
     res_inter["DAS3H user/skill"] = us_i
 
     print_full_cv_table(res_user, res_inter, dataset=FOLDER, n_folds=N_FOLDS)

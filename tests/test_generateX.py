@@ -14,10 +14,10 @@ import src.datamodel.Historydata as HIS
 
 # Choisis le(s) dataset(s) à régénérer. Commence par MATHIA seul.
 DATASETS = [
-    #("Mathiadata", 25351),
-    ("ASSISTments13_12", 15698),
-     #("bridge_algebra06", 1146),   # ATTENTION : ~19355 items -> très lourd
-    # ("algebra05", 574),           # ATTENTION : ~1084 items
+    ("Mathiadata_v2", 100000),
+    #("ASSISTments13_12", 15698),
+    # ("bridge_algebra06", 1146),   
+     #("algebra05", 574),           
 ]
 
 N_TIME_WINDOWS = 5
@@ -28,6 +28,10 @@ def regenerate_with_item_blocks(folder, n_students, n_tw=5):
 
     # Charge les données déjà prétraitées et la Q-matrix existantes
     df = pd.read_csv(os.path.join(data_folder, f"preprocessed_data_{n_students}std.csv"))
+    unique_users = df["user_id"].unique()
+    rng = np.random.default_rng(42)
+    selected = rng.choice(unique_users, size=20000, replace=False)
+    df = df[df["user_id"].isin(selected)]
     q_matrix = sparse.load_npz(
         os.path.join(data_folder, f"q_mat_{n_students}std.npz")
     ).toarray()

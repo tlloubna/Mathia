@@ -22,10 +22,10 @@ class StudentDATA:
         self.data = self.exp1.loadData(Display=False)
 
         # Sélectionner un sous-ensemble d'élèves AVANT factorisation
-        unique_users = self.data["user_id"].unique()
-        rng = np.random.default_rng(self.seed)  # générateur NumPy avec seed
-        selected_users = rng.choice(unique_users, size=n_students, replace=False)
-        self.data = self.data[self.data["user_id"].isin(selected_users)]
+        #unique_users = self.data["user_id"].unique()
+        #rng = np.random.default_rng(self.seed)  # générateur NumPy avec seed
+        #selected_users = rng.choice(unique_users, size=n_students, replace=False)
+        #self.data = self.data[self.data["user_id"].isin(selected_users)]
 
         # Construire item_id = item_name + step_name
         if "step_name" in self.data.columns:
@@ -182,9 +182,10 @@ class Mathiadata(StudentDATA):
         df = pd.read_csv(self.pathfile)
 
         df = df.rename(columns={
-            "student_id": "user_id",
-            "kc_names":     "KC",
-        })
+            "student_id":   "user_id",
+            'competences_names':  "KC",
+            "competences_ids":"kc_ids"})
+
         #le nombre de sec écoulées depuis le 1ier janvier 1970 à 00:00:00 UTC
         #1970 est la date de la naisance de 1970
         df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")

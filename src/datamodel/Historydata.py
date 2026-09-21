@@ -31,11 +31,10 @@ class HistoryDATA:
             "df": np.empty((0, 5))
         }
 
-        #  Files glissantes
         q = defaultdict(self.make_queue)
-
-        #  Boucle par élève
+        
         for idx,stud_id in enumerate(df["user_id"].unique()):
+            
             print("Stud_id:",idx+1,"/",len(df["user_id"].unique()))
             
             df_stud = df[df["user_id"] == stud_id][["user_id", "item_id", "timestamp", "correct", "inter_id"]]
@@ -116,6 +115,7 @@ class HistoryDATA:
             X["fails"],
             X["attempts"]
         ]).tocsr()
+        
        
         return sparse_df, self.user_ids, self.item_ids, listOfKC
     

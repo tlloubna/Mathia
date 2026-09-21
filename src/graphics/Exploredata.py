@@ -35,7 +35,7 @@ class ExploreDATA:
     def loadData(self,Display:bool=False):
         print("Load data...")
         try :
-            self.data=pd.read_csv(self.pathfile,sep='\t')
+            self.data=pd.read_csv(self.pathfile,sep='\t')#"""sep='\t'"""
             self.data = self.data.rename(columns=COLUMN_RENAME)
             if Display:
                 print("First lines of file",os.path.basename(self.pathfile))

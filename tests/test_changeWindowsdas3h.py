@@ -13,26 +13,39 @@ from scipy import sparse
 import matplotlib.pyplot as plt
 import src.datamodel.Historydata as HIS
 import src.Process.DAS3H as DAS3H
-DATASETS = [
-     ("Mathiadata_v2",      100000,  "mathia"),
-    ("ASSISTments13_12", 15698, "assist12"),
-    ("bridge_algebra06", 1146,  "bridge06"),
-    ("algebra05",         574,  "algebra05"),
-   
-]
-NAME_FOLDER="ASSISTments13_12"#algebra =574,item 1084
+import src.datamodel.Studentdata as SD
+import joblib
+NAME_FOLDER="simulated"#algebra =574,item 1084
 DATA_FOLDER = os.path.join("data",NAME_FOLDER)
-N_STUDENTS = 15698 # Number of students to use real user = 1146 , item =19355
-MIN_INTERACTIONS = 30
 
-
-def test_changeWindowdas3h(windows,data,Q_mat):
-    his=HIS.HistoryDATA(TimeWindow=windows)
-    X,user_ids,item_ids,listofKC=his.ComputeHistoryFeaturesTWKC(Q_mat,data)
-    
-    model=DAS3H.DAS3HModel(C=1.0)
-    results=model.fit(X,user_ids,item_ids,listofKC,n_tw=len(windows),perc_init=0.8)
+def test_changeWindowdas3h(windows, data, Q_mat, nom):
+    his = HIS.HistoryDATA(TimeWindow=windows)
+    X, user_ids, item_ids, listofKC = his.ComputeHistoryFeaturesTWKC(Q_mat, data)
+    sparse.save_npz(os.path.join(DATA_FOLDER, f"history_features_{nom}.npz"),
+                    sparse.csr_matrix(X))
+    np.savez(os.path.join(DATA_FOLDER, f"history_metadata_{nom}.npz"),
+             user_ids=user_ids, item_ids=item_ids, kc_list=listofKC)
+    model = DAS3H.DAS3HModel(C=1.0)
+    results = model.fit(X, user_ids, item_ids, listofKC,
+                        n_tw=len(windows), perc_init=0.8)
+    out_path = os.path.join(DATA_FOLDER, f"das3h_model_C1_{nom}.pkl")
+    joblib.dump({"mode": "production", "model": model, "results": results}, out_path)
     return results
+
+def load_student_model(data_folder: str,mininteractions: int = 30,n_students: int = 100):
+    print("!!!!!!!!!!!!!!!!Loading student model !!!!!!!!!!!!")
+    pathbridge = os.path.join(data_folder, "..", NAME_FOLDER, "data.csv")
+    stdmodel :SD.StudentDATA= SD.StudentDATA(file=pathbridge)
+    df,Q=stdmodel.loadData(Display=False, min_intercation=mininteractions, n_students=n_students)
+    df.to_csv(os.path.join(data_folder, f"preprocessed_data.csv"), index=False)
+    sparse.save_npz(os.path.join(data_folder, f"q_mat.npz"), sparse.csr_matrix(Q))
+
+    joblib.dump({"user_mapping": stdmodel.user_mapping,
+                 "item_mapping": stdmodel.item_mapping,},
+                os.path.join(data_folder, f"id_mappings.pkl"))
+    return df,Q
+
+
 
 def plot_window_comparaison(windows_configs, auc_list, nll_list, rmse_list):
     x=list(windows_configs.keys())
@@ -61,39 +74,42 @@ def plot_window_comparaison(windows_configs, auc_list, nll_list, rmse_list):
     plt.tight_layout()  
     plt.show()
 
+
+
 if __name__ == "__main__":
-    df=pd.read_csv(os.path.join(DATA_FOLDER, f"preprocessed_data_{N_STUDENTS}std.csv"))
-    q_matrix = sparse.load_npz(os.path.join(DATA_FOLDER, f"q_mat_{N_STUDENTS}std.npz")).toarray()
-    
-    H  = 3600
-    D  = 3600 * 24
-    W  = 3600 * 24 * 7
-    M  = 3600 * 24 * 30
-    INF = float("inf")
+    df=pd.read_csv("/home/loubna/Code_Projet_Mathia/Mathia/data/simulated/preprocessed_data_simulated_1000std.csv")
+    q_matrix=sparse.load_npz("/home/loubna/Code_Projet_Mathia/Mathia/data/simulated/q_mat_1000std.npz").toarray()
+    #df,q_matrix=load_student_model(data_folder=DATA_FOLDER,mininteractions=1,n_students=100000)
+    H    = 3600
+    D    = 3600 * 24
+    W    = 3600 * 24 * 7
+    M    = 3600 * 24 * 30
+    T_M  = 3600 * 24 * 30 * 3       # 3 mois
+    S_M  = 3600 * 24 * 30 * 6       # 6 mois
+    O_Y  = 3600 * 24 * 30 * 12      # 1 an
+    INF  = float("inf")
 
     window_configs = {
-        "sans_tw":        [INF],                        
-        "1h_inf":             [H, INF],
-        "1j_inf":             [D, INF],
-        "1sem_inf":           [W, INF],
-        "1h_1j_inf":          [H, D, INF],
-        "1j_1sem_inf":        [D, W, INF],
-        "1sem_1moi_inf":     [W, M, INF],
-        "1h_1j_1sem_inf":     [H, D, W, INF],
-        "1j_1sem_1mois_inf":  [D, W, M, INF],
-        "1h_1j_1sem_1m_inf":  [H, D, W, M, INF],          
+        # references deja mesurees
+        "das3h_original":        [H, D, W, M, INF],
+        "w_m_3m_6m_1an_inf":     [W, M, T_M, S_M, O_Y, INF],
+        "m_3m_6m_1an_inf":       [M, T_M, S_M, O_Y, INF],
+        "3m_6m_1an_inf":         [T_M, S_M, O_Y, INF],
+        "6m_1an_inf":            [S_M, O_Y, INF],
     }
     auc_list=[]
     nll_list=[]
     rmse_list=[]
-    for w in window_configs.values():
+    for nom, w in window_configs.items():
         print(f"Testing with windows: {w}")
-        results = test_changeWindowdas3h(w, df, q_matrix)
-        print(f"Results for windows {w}: {results}\n")  
+        results =test_changeWindowdas3h(w, df, q_matrix, nom)
         auc_list.append(results["AUC"])
         nll_list.append(results["NLL"])
         rmse_list.append(results["RMSE"])
         print(f"windows: {w}, AUC: {results['AUC']} \n ")
+        print(f"windows: {w}, NLL: {results['NLL']} \n ")
+        print(f"windows: {w}, RMSE: {results['RMSE']} \n ")
+
 
     plot_window_comparaison(window_configs, auc_list, nll_list, rmse_list)
     print("!!!!!!!!!!!!Done!!!!!!!!!!!!")

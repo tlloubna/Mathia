@@ -228,7 +228,7 @@ def eval_bayes_cv(X, n_users, n_items, n_skills, n_tw, n_folds=5, seed=42):
             raw[m].append(res["DAS3H+Bayes"][m])
         print(f"  AUC={raw['AUC'][-1]:.4f}")
 
-    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw}
+    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw},raw 
 
 def eval_bayes_cv_Interaction(X, n_users, n_items, n_skills, n_tw, n_folds=5, seed=42):
     y = X[:, 3].toarray().flatten()
@@ -254,14 +254,14 @@ def eval_bayes_cv_Interaction(X, n_users, n_items, n_skills, n_tw, n_folds=5, se
             raw[m].append(res["DAS3H+Bayes"][m])
         print(f"  AUC={raw['AUC'][-1]:.4f}")
 
-    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw}
+    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw},raw
 
 def eval_userskill_cv(data_folder, n_students, n_tw,
                       split_mode="user", n_folds=5, seed=42):
     path = os.path.join(data_folder, f"history_features_Alpha{n_students}std.npz")
     if not os.path.exists(path):
         print(f"  [!] Matrice Alpha introuvable : {path}")
-        return None
+        return None,None
 
     Xa = sparse.load_npz(path)
     y = Xa[:, 3].toarray().flatten()
@@ -286,7 +286,7 @@ def eval_userskill_cv(data_folder, n_students, n_tw,
         raw["RMSE"].append(np.sqrt(mean_squared_error(y[test_idx], y_pred)))
         print(f"  user/skill pli {k+1}/{n_folds} AUC={raw['AUC'][-1]:.4f}")
 
-    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw}
+    return {m: (np.mean(raw[m]), np.std(raw[m])) for m in raw},raw
 
 
 def print_cv_table(summary, split_mode, dataset=""):
@@ -329,61 +329,97 @@ def print_full_cv_table(results_user, results_inter, dataset="", n_folds=5):
               f"{fmt(ri,'AUC'):>13}{fmt(ri,'NLL'):>13}{fmt(ri,'RMSE'):>13}")
     print("=" * 100)
 
+import csv
 
-if __name__ == "__main__":
-    # ("algebra05", 574)
+def collect_raw_rows(raw_by_model, dataset, split_mode, seed):
+    rows = []
+    for model, metrics in raw_by_model.items():
+        if metrics is None:
+            continue
+        n = len(metrics["AUC"])
+        for k in range(n):
+            rows.append({
+                "dataset": dataset, "split_mode": split_mode, "model": model,
+                "seed": seed,
+                "fold": k,
+                "global_fold": seed * 1000 + k,   # identifiant unique de pli (pour le test apparié)
+                "AUC": metrics["AUC"][k],
+                "NLL": metrics["NLL"][k],
+                "RMSE": metrics["RMSE"][k],
+            })
+    return rows
+
+def save_folds_csv(rows, path):
+    fieldnames = ["dataset", "split_mode", "model", "seed", "fold", "global_fold",
+                  "AUC", "NLL", "RMSE"]
+    with open(path, "w", newline="") as f:   # "w" : on écrit tout d'un coup à la fin
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+
+ # ("algebra05", 574)
     #("bridge_algebra06", 1146)
     #("Mathiadata", 25351),
     #("ASSISTments13_12", 15698),
      #("Mathiadata_v2", 100000)
+if __name__ == "__main__":
     N_TW = 5
     N_FOLDS = 5
-    SEED = 42
-    N_STUDENTS =   15698
-    FOLDER ="ASSISTments13_12"
+    SEEDS = [42, 7, 13, 101, 202, 303, 404, 505, 606, 707]   # 10 seeds × 5 folds = 50 mesures
+    N_STUDENTS = 100000
+    FOLDER = "Mathiadata_v2"
     data_folder = os.path.join("data", FOLDER)
-
     path_dash = os.path.join(data_folder, f"history_features_DASH_{N_STUDENTS}std.npz")
     path_meta_dash = os.path.join(data_folder, f"history_metadata_DASH_{N_STUDENTS}std.npz")
-    if os.path.exists(path_dash):
-        X = sparse.load_npz(path_dash)
-        metadata = np.load(path_meta_dash, allow_pickle=True)
-        has_item_blocks = True
-        print(">>> Matrice AVEC blocs item (vrai DASH)")
-    else:
-        X = sparse.load_npz(os.path.join(data_folder, f"history_features_{N_STUDENTS}std.npz"))
-        metadata = np.load(os.path.join(data_folder, f"history_metadata_{N_STUDENTS}std.npz"),
-                           allow_pickle=True)
-        has_item_blocks = False
-        print(">>> Matrice SANS blocs item (DASH approximé par CC)")
+    if not os.path.exists(path_dash):
+        print(f"[!] Fichier introuvable : {path_dash}")
+        sys.exit(1)
 
+    # ---- chargement UNE seule fois (indépendant du seed) ----
+    X = sparse.load_npz(path_dash)
+    metadata = np.load(path_meta_dash, allow_pickle=True)
+    has_item_blocks = True
     n_users = len(metadata["user_ids"])
     n_items = len(metadata["item_ids"])
     n_kcs   = len(metadata["kc_list"])
     print(f"X.shape={X.shape}  n_users={n_users} n_items={n_items} n_kcs={n_kcs}")
-    summ_user, _ = fit_models_cv(X, n_users, n_items, n_kcs, N_TW,
-                                 split_mode="user", n_folds=N_FOLDS,
-                                 seed=SEED, has_item_blocks=has_item_blocks)
-    bayes_u = eval_bayes_cv(X, n_users, n_items, n_kcs, N_TW, n_folds=N_FOLDS, seed=SEED)
-    us_u = eval_userskill_cv(data_folder, N_STUDENTS, N_TW,
-                             split_mode="user", n_folds=N_FOLDS, seed=SEED)
+    all_rows = []   # on accumule toutes les lignes de tous les seeds
 
-    res_user = dict(summ_user)               # DAS3H, DASH, IRT/MIRT, PFA, AFM
-    res_user["DAS3H+Bayes"] = bayes_u        # variante 1
-    res_user["DAS3H user/skill"] = us_u      # variante 2 (None si matrice Alpha absente)
-    summ_inter, _ = fit_models_cv(X, n_users, n_items, n_kcs, N_TW,
-                                  split_mode="interaction", n_folds=N_FOLDS,
-                                  seed=SEED, has_item_blocks=has_item_blocks)
-    bayes_i = eval_bayes_cv_Interaction(X, n_users, n_items, n_kcs, N_TW, n_folds=N_FOLDS, seed=SEED)
-    us_i = eval_userskill_cv(data_folder, N_STUDENTS, N_TW,
-                             split_mode="interaction", n_folds=N_FOLDS, seed=SEED)
+    for seed in SEEDS:
+        print(f"\n########## SEED {seed} ##########")
 
-    res_inter = dict(summ_inter)
-    res_inter["DAS3H+Bayes"] = bayes_i         # Bayes : pas de sens en interaction
-    res_inter["DAS3H user/skill"] = us_i
+        # --- split user ---
+        summ_user, raw_user = fit_models_cv(X, n_users, n_items, n_kcs, N_TW,
+                                            split_mode="user", n_folds=N_FOLDS,
+                                            seed=seed, has_item_blocks=has_item_blocks)
+        bayes_u, raw_bayes_u = eval_bayes_cv(X, n_users, n_items, n_kcs, N_TW,
+                                             n_folds=N_FOLDS, seed=seed)
+        us_u, raw_us_u = eval_userskill_cv(data_folder, N_STUDENTS, N_TW,
+                                           split_mode="user", n_folds=N_FOLDS, seed=seed)
+        raw_user["DAS3H+Bayes"] = raw_bayes_u
+        raw_user["DAS3H user/skill"] = raw_us_u
 
-    print_full_cv_table(res_user, res_inter, dataset=FOLDER, n_folds=N_FOLDS)
+        # --- split interaction ---
+        summ_inter, raw_inter = fit_models_cv(X, n_users, n_items, n_kcs, N_TW,
+                                              split_mode="interaction", n_folds=N_FOLDS,
+                                              seed=seed, has_item_blocks=has_item_blocks)
+        bayes_i, raw_bayes_i = eval_bayes_cv_Interaction(X, n_users, n_items, n_kcs, N_TW,
+                                                         n_folds=N_FOLDS, seed=seed)
+        us_i, raw_us_i = eval_userskill_cv(data_folder, N_STUDENTS, N_TW,
+                                           split_mode="interaction", n_folds=N_FOLDS, seed=seed)
+        raw_inter["DAS3H+Bayes"] = raw_bayes_i
+        raw_inter["DAS3H user/skill"] = raw_us_i
 
-    
+        # --- accumulation ---
+        all_rows += collect_raw_rows(raw_user,  FOLDER, "user",        seed)
+        all_rows += collect_raw_rows(raw_inter, FOLDER, "interaction", seed)
+
+    # ---- export final (un seul fichier, toutes les seeds) ----
+    results_folder = os.path.join(data_folder, "results")
+    os.makedirs(results_folder, exist_ok=True)
+    csv_path = os.path.join(results_folder, "cv_folds.csv")
+    save_folds_csv(all_rows, csv_path)
+    print(f"\n>>> {len(all_rows)} lignes enregistrées dans : {csv_path}")
+
 
     print("\n!!! done !!!")
